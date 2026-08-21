@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NetRemote</string>
+
+    <string name="intro">Active un serveur local sur ce téléphone. Depuis un PC ou un autre appareil connecté à son point d\'accès, ouvre l\'adresse ci-dessous dans un navigateur pour activer ou couper les données mobiles.\n\nLe point d\'accès doit être activé à la main : le serveur ne peut pas l\'allumer, puisqu\'il faut y être connecté pour l\'atteindre.</string>
+
+    <string name="server_enable">Serveur local</string>
+    <string name="server_off">Serveur arrêté.</string>
+    <string name="server_failed">Serveur en échec : %1$s</string>
+    <string name="server_no_address">Serveur actif, mais aucune adresse réseau détectée. Le point d\'accès est-il allumé ?</string>
+    <string name="new_key">Générer une nouvelle clé</string>
+
+    <string name="debug_title">Diagnostic</string>
+    <string name="refresh">Rafraîchir</string>
+
+    <string name="shizuku_button">Autoriser Shizuku</string>
+    <string name="shizuku_ready">Shizuku est déjà prêt.</string>
+    <string name="shizuku_absent">Shizuku n\'est pas lancé. Ouvrez l\'app Shizuku et démarrez le service — à refaire après chaque redémarrage du téléphone.</string>
+
+    <string name="battery_hint">Pour que le serveur survive en arrière-plan, désactivez l\'optimisation de batterie pour cette app (indispensable sur Xiaomi, Huawei, Oppo, Samsung).</string>
+    <string name="battery_settings">Optimisation de la batterie</string>
+
+    <string name="channel_name">Serveur local</string>
+    <string name="channel_description">Notification permanente indiquant que le serveur est actif.</string>
+    <string name="notif_title">NetRemote actif</string>
+    <string name="notif_stopped">Serveur arrêté.</string>
+    <string name="notif_no_address">Aucune adresse réseau — point d\'accès éteint ?</string>
+    <string name="action_stop">Arrêter</string>
+</resources>

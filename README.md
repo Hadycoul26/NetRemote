@@ -17,8 +17,15 @@ Le serveur existe en deux versions, selon la machine qui partage :
 
 | Version | État | Ce qu'elle pilote |
 |---|---|---|
-| **PC** (`pc/server.py`) | fonctionnel, testé | activation / coupure d'une carte réseau Windows |
-| **Android** (`android/`) | à faire | activation / coupure des données mobiles |
+| **Android** (`android/`) | c'est celle qui sert | données mobiles du téléphone |
+| **PC** (`pc/server.py`) | optionnel, testé | une carte réseau Windows |
+
+**La version Android est la principale** : c'est le téléphone qui porte la
+connexion cellulaire et la partage par point d'accès.
+
+La version PC est conservée pour le cas d'une **clé 4G USB**, qui apparaît sous
+Windows comme une carte réseau ordinaire. Elle ne sert à rien pour un modem
+cellulaire *intégré* (`netsh mbn`), non géré faute de matériel pour le tester.
 
 Le client web (`web/index.html`) est **le même pour les deux** : les serveurs
 exposent la même API, donc une seule page à maintenir.
