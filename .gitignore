@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.netremote_key
+android/build/
+android/.gradle/
+android/local.properties

@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NetRemote</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0 auto; padding: 24px; max-width: 480px; line-height: 1.5;
+  }
+  h1 { font-size: 1.5rem; margin: 0 0 2px; }
+  .sub { opacity: .65; font-size: .85rem; margin: 0 0 24px; }
+
+  .card {
+    border: 1px solid rgba(128,128,128,.35); border-radius: 16px;
+    padding: 20px; margin-bottom: 16px;
+  }
+  .state { display: flex; align-items: center; gap: 12px; }
+  .dot { width: 14px; height: 14px; border-radius: 50%; background: #9e9e9e; flex: none; }
+  .dot.on  { background: #2e7d32; }
+  .dot.off { background: #c62828; }
+  .state-text { font-size: 1.1rem; font-weight: 600; }
+  .detail { opacity: .65; font-size: .85rem; margin-top: 6px; word-break: break-word; }
+
+  button {
+    display: block; width: 100%; padding: 16px; margin-top: 10px;
+    font-size: 1rem; font-weight: 500; border-radius: 12px;
+    border: 1px solid currentColor; background: transparent; color: inherit;
+    cursor: pointer;
+  }
+  button.on  { background: #2e7d32; border-color: #2e7d32; color: #fff; }
+  button.off { background: #c62828; border-color: #c62828; color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+
+  input {
+    width: 100%; padding: 14px; font-size: 1rem; border-radius: 12px;
+    border: 1px solid currentColor; background: transparent; color: inherit;
+  }
+  .log { font-family: ui-monospace, monospace; font-size: .8rem; opacity: .75;
+         white-space: pre-wrap; word-break: break-word; margin-top: 16px; }
+  .warn { font-size: .8rem; opacity: .7; }
+</style>
+</head>
+<body>
+
+<h1>NetRemote</h1>
+<p class="sub" id="host">Connexion au serveur…</p>
+
+<div id="auth" class="card" hidden>
+  <p>Entrez la clé affichée par le serveur.</p>
+  <input id="key" placeholder="clé" autocapitalize="characters" autocomplete="off">
+  <button id="login">Entrer</button>
+</div>
+
+<div id="panel" hidden>
+  <div class="card">
+    <div class="state">
+      <span class="dot" id="dot"></span>
+      <span class="state-text" id="stateText">…</span>
+    </div>
+    <div class="detail" id="detail"></div>
+  </div>
+
+  <button class="on"  id="btnOn">Activer la connexion</button>
+  <button class="off" id="btnOff">Couper la connexion</button>
+
+  <p class="warn" id="warn"></p>
+  <div class="log" id="log"></div>
+</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+
+  function storedKey() {
+    var fromUrl = new URLSearchParams(location.search).get('k');
+    if (fromUrl) { try { localStorage.setItem('netremote_key', fromUrl); } catch (e) {} return fromUrl; }
+    try { return localStorage.getItem('netremote_key') || ''; } catch (e) { return ''; }
+  }
+
+  var key = storedKey();
+  var busy = false;
+
+  function log(message) {
+    $('log').textContent = new Date().toLocaleTimeString() + '  ' + message;
+  }
+
+  function api(path, params) {
+    var query = new URLSearchParams(params || {});
+    query.set('k', key);
+    return fetch(path + '?' + query.toString(), { cache: 'no-store' })
+      .then(function (response) {
+        if (response.status === 401) { throw new Error('unauthorized'); }
+        return response.json();
+      });
+  }
+
+  function showAuth() {
+    $('auth').hidden = false;
+    $('panel').hidden = true;
+    $('host').textContent = 'Clé requise';
+  }
+
+  function render(state) {
+    $('auth').hidden = true;
+    $('panel').hidden = false;
+
+    $('host').textContent = state.platform === 'android'
+      ? 'Serveur Android — ' + (state.device || '')
+      : 'Serveur PC — ' + (state.device || '');
+
+    var on = !!state.connected;
+    $('dot').className = 'dot ' + (on ? 'on' : 'off');
+    $('stateText').textContent = on ? 'Connexion active' : 'Connexion coupée';
+    $('detail').textContent = state.detail || '';
+
+    $('btnOn').disabled = busy || on;
+    $('btnOff').disabled = busy || !on;
+
+    $('warn').textContent = state.warning || '';
+  }
+
+  function refresh() {
+    return api('/api/state')
+      .then(render)
+      .catch(function (error) {
+        if (error.message === 'unauthorized') { showAuth(); }
+        else { $('host').textContent = 'Serveur injoignable'; }
+      });
+  }
+
+  function setConnection(on) {
+    busy = true;
+    $('btnOn').disabled = true;
+    $('btnOff').disabled = true;
+    log(on ? 'Activation…' : 'Coupure…');
+
+    api('/api/set', { on: on ? '1' : '0' })
+      .then(function (result) {
+        log((result.ok ? 'OK — ' : 'ÉCHEC — ') + (result.detail || ''));
+      })
+      .catch(function (error) {
+        log(error.message === 'unauthorized' ? 'Clé refusée' : 'Serveur injoignable');
+      })
+      .then(function () {
+        busy = false;
+        // Le basculement d'une interface reseau n'est pas instantane.
+        setTimeout(refresh, 1200);
+      });
+  }
+
+  $('btnOn').onclick = function () { setConnection(true); };
+  $('btnOff').onclick = function () { setConnection(false); };
+
+  $('login').onclick = function () {
+    key = $('key').value.trim().toUpperCase();
+    try { localStorage.setItem('netremote_key', key); } catch (e) {}
+    refresh();
+  };
+  $('key').onkeydown = function (e) { if (e.key === 'Enter') { $('login').click(); } };
+
+  if (!key) { showAuth(); } else { refresh(); }
+  setInterval(function () { if (!busy && !$('panel').hidden) { refresh(); } }, 5000);
+})();
+</script>
+</body>
+</html>
