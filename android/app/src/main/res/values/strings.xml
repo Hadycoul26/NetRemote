@@ -30,12 +30,12 @@
     <string name="self_test_on">activation</string>
     <string name="self_test_off">coupure</string>
 
-    <string name="learn_start">Apprendre la bascule</string>
-    <string name="learn_forget">Oublier la séquence</string>
-    <string name="learn_capturing">Ouverture des paramètres rapides…</string>
-    <string name="learn_pick">Quelle entrée bascule les données ?</string>
-    <string name="learn_none">Panneau vide. Le service d\'accessibilité est-il bien actif ?</string>
-    <string name="learn_saved">Appris : %1$s</string>
+    <string name="learn_start">Enregistrer le parcours</string>
+    <string name="learn_stop">Arrêter l\'enregistrement (%1$d appui(s))</string>
+    <string name="learn_forget">Oublier le parcours</string>
+    <string name="learn_instructions">L\'enregistrement a commencé.\n\nAllez basculer les données mobiles comme vous le faites d\'habitude : par la tuile des paramètres rapides, ou en passant par Réglages → Réseau. Tous vos appuis sont enregistrés, autant qu\'il en faut.\n\nQuand c\'est fait, revenez ici et appuyez sur « Arrêter l\'enregistrement ».</string>
+    <string name="learn_none">Aucun appui capté. Le service d\'accessibilité est-il bien actif ?</string>
+    <string name="learn_saved">Parcours appris (%1$d appuis) : %2$s</string>
     <string name="learn_needs_service">Activez d\'abord le service d\'accessibilité.</string>
 
     <string name="shizuku_button">Autoriser Shizuku</string>

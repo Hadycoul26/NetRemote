@@ -17,13 +17,16 @@ data class Step(
     val viewId: String,
     val label: String,
     val x: Int,
-    val y: Int
+    val y: Int,
+    /** Application ou se trouvait l'appui : sert a s'y replacer au rejeu. */
+    val pkg: String = ""
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("viewId", viewId)
         .put("label", label)
         .put("x", x)
         .put("y", y)
+        .put("pkg", pkg)
 
     fun describe(): String = when {
         viewId.isNotBlank() -> label.ifBlank { viewId.substringAfterLast('/') }
@@ -34,7 +37,7 @@ data class Step(
     companion object {
         fun fromJson(o: JSONObject) = Step(
             o.optString("viewId"), o.optString("label"),
-            o.optInt("x", -1), o.optInt("y", -1)
+            o.optInt("x", -1), o.optInt("y", -1), o.optString("pkg")
         )
     }
 }

@@ -3,6 +3,7 @@ package com.example.netremote
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.Context
+import android.content.Intent
 import android.graphics.Path
 import android.graphics.Rect
 import android.os.Handler
@@ -14,21 +15,16 @@ import android.view.accessibility.AccessibilityNodeInfo
 import java.text.Normalizer
 
 /**
- * Bascule les donnees mobiles en pilotant les parametres rapides.
+ * Bascule les donnees mobiles en rejouant un parcours appris.
  *
  * Seule voie sans root ni adb : l'utilisateur active le service une fois dans
  * les Reglages, et il survit aux redemarrages. En echange, l'ecran doit etre
  * allume, puisqu'on manipule reellement l'interface.
  *
- * Deux modes :
- *
- *  - APPRENTISSAGE : l'utilisateur montre une fois ou appuyer, on enregistre.
- *  - REJEU : on refait la sequence apprise, ou a defaut on cherche la tuile
- *    par mots-cles.
- *
- * L'apprentissage existe parce que les libelles et la disposition changent
- * selon le constructeur, la version et la langue : deviner revient a parier
- * sur un appareil qu'on n'a pas.
+ * L'apprentissage enregistre une SUITE d'appuis, pas un seul : atteindre les
+ * donnees mobiles demande souvent de traverser plusieurs ecrans
+ * (Parametres -> Reseau -> Donnees -> interrupteur) quand la tuile des
+ * parametres rapides ne repond pas.
  */
 class DataToggleService : AccessibilityService() {
 
@@ -47,51 +43,36 @@ class DataToggleService : AccessibilityService() {
 
     override fun onInterrupt() = Unit
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    // --- Apprentissage ----------------------------------------------------
 
-    // --- Apprentissage : capture du panneau ------------------------------
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (!recording || event == null) return
+        if (event.eventType != AccessibilityEvent.TYPE_VIEW_CLICKED) return
 
-    /**
-     * Ouvre les parametres rapides, releve tout ce qui s'y trouve, referme.
-     *
-     * On ne guette plus les clics de l'utilisateur : les tuiles n'emettent pas
-     * d'evenement exploitable. On lit le panneau et on laisse l'utilisateur
-     * designer la bonne entree, ce qui ne depend d'aucun evenement.
-     */
-    internal fun captureCandidates(onDone: (List<Step>) -> Unit) {
-        handler.post { openQuickSettings() }
+        val pkg = event.packageName?.toString().orEmpty()
 
-        handler.postDelayed({
-            val clickable = mutableListOf<Step>()
-            val others = mutableListOf<Step>()
+        // Les appuis dans notre propre app sont les boutons Demarrer et Arreter :
+        // les enregistrer polluerait la sequence.
+        if (pkg == packageName) return
 
-            for (node in collectNodes()) {
-                val label = labelOf(node)
-                val id = node.viewIdResourceName.orEmpty()
-                if (label.isBlank() && id.isBlank()) continue
+        val node = event.source ?: return
+        val bounds = Rect().also { node.getBoundsInScreen(it) }
 
-                val bounds = Rect().also { node.getBoundsInScreen(it) }
-                if (bounds.width() <= 0 || bounds.height() <= 0) continue
+        val step = Step(
+            viewId = node.viewIdResourceName.orEmpty(),
+            label = (node.text?.toString() ?: node.contentDescription?.toString()).orEmpty(),
+            x = bounds.centerX(),
+            y = bounds.centerY(),
+            pkg = pkg
+        )
 
-                val step = Step(id, label, bounds.centerX(), bounds.centerY())
-                if (node.isClickable || node.parent?.isClickable == true) {
-                    clickable += step
-                } else {
-                    others += step
-                }
-            }
+        if (step.viewId.isBlank() && step.label.isBlank() && step.x <= 0) return
 
-            // Les elements cliquables d'abord : ce sont les candidats plausibles.
-            val candidates = (clickable + others)
-                .distinctBy { it.viewId + "|" + it.label }
-                .take(MAX_CANDIDATES)
-
-            performGlobalAction(GLOBAL_ACTION_BACK)
-            handler.post { onDone(candidates) }
-        }, STEP_MS * 3)
+        recorded += step
+        Log.i(TAG, "Appui ${recorded.size} enregistré : ${step.describe()} [$pkg]")
     }
 
-    // --- Rejeu -----------------------------------------------------------
+    // --- Rejeu ------------------------------------------------------------
 
     internal fun openQuickSettings() {
         performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
@@ -104,8 +85,12 @@ class DataToggleService : AccessibilityService() {
      * assez pour declencher un ANR.
      */
     internal fun replayLearned(steps: List<Step>): ActionResult {
-        handler.post { openQuickSettings() }
-        pause(STEP_MS * 3)
+        if (steps.isEmpty()) return ActionResult(false, "aucune séquence apprise")
+
+        if (!bringUp(steps.first().pkg)) {
+            return ActionResult(false, "impossible d'ouvrir « ${steps.first().pkg} »")
+        }
+        pause(START_MS)
 
         val done = mutableListOf<String>()
         for ((index, step) in steps.withIndex()) {
@@ -113,43 +98,78 @@ class DataToggleService : AccessibilityService() {
                 closePanel()
                 return ActionResult(
                     false,
-                    "étape ${index + 1} (${step.describe()}) irrejouable"
+                    "étape ${index + 1}/${steps.size} (${step.describe()}) introuvable" +
+                        if (done.isEmpty()) "" else ", après : " + done.joinToString(" → ")
                 )
             }
             done += step.describe()
-            pause(700)
+            // Ouvrir un ecran de Reglages prend nettement plus qu'un appui sur
+            // une tuile : on laisse le temps a la fenetre suivante d'arriver.
+            pause(BETWEEN_MS)
         }
 
         closePanel()
-        return ActionResult(true, "séquence rejouée : " + done.joinToString(" → "))
+        return ActionResult(true, "parcours rejoué : " + done.joinToString(" → "))
     }
 
     /**
-     * On localise la tuile par son identifiant, puis on y envoie un VRAI
-     * toucher plutot qu'un ACTION_CLICK.
+     * Se replacer au point de depart du parcours.
+     *
+     * Sans ca, un parcours qui commence dans les Reglages echouerait des la
+     * premiere etape si le telephone affiche autre chose.
+     */
+    private fun bringUp(pkg: String): Boolean {
+        if (pkg.isBlank()) return true
+
+        if (pkg.contains("systemui", ignoreCase = true)) {
+            handler.post { openQuickSettings() }
+            return true
+        }
+
+        return try {
+            val intent = packageManager.getLaunchIntentForPackage(pkg)
+                ?: Intent(Settings.ACTION_SETTINGS).takeIf { pkg.contains("settings") }
+                ?: return false
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            startActivity(intent)
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "Ouverture de $pkg impossible", e)
+            false
+        }
+    }
+
+    /**
+     * On localise l'element, puis on y envoie un VRAI toucher plutot qu'un
+     * ACTION_CLICK.
      *
      * La distinction est capitale : sur les tuiles des parametres rapides,
      * l'action d'accessibilite est souvent cablee sur « ouvrir les reglages
-     * detailles », alors qu'un appui reel bascule. Observe sur l'appareil :
-     * ACTION_CLICK ouvrait les parametres de connexion au lieu de basculer.
+     * detailles », alors qu'un appui reel bascule. Observe sur l'appareil.
      *
-     * Localiser d'abord donne les coordonnees ACTUELLES, donc on ne depend pas
-     * d'une position figee a l'apprentissage.
+     * On reessaie pendant quelques secondes : l'ecran precedent peut encore
+     * etre en train de ceder la place.
      */
     private fun playStep(step: Step): Boolean {
-        val node = locate(step, collectNodes())
+        val deadline = System.currentTimeMillis() + LOCATE_MS
 
-        if (node != null) {
-            val bounds = Rect().also { node.getBoundsInScreen(it) }
-            if (bounds.width() > 0 && bounds.height() > 0) {
-                if (tapAt(bounds.centerX(), bounds.centerY())) return true
+        while (System.currentTimeMillis() < deadline) {
+            val node = locate(step, collectNodes())
+            if (node != null) {
+                val bounds = Rect().also { node.getBoundsInScreen(it) }
+                if (bounds.width() > 0 && bounds.height() > 0 &&
+                    tapAt(bounds.centerX(), bounds.centerY())
+                ) {
+                    return true
+                }
+                // Dernier recours : peut ouvrir les reglages au lieu de basculer.
+                if (clickNode(node)) return true
             }
+            pause(300)
         }
 
-        if (step.x > 0 && step.y > 0 && tapAt(step.x, step.y)) return true
-
-        // Dernier recours seulement : il peut ouvrir les reglages au lieu de basculer.
-        return node != null && clickNode(node)
+        // L'element reste introuvable : on tente la position d'origine.
+        return step.x > 0 && step.y > 0 && tapAt(step.x, step.y)
     }
 
     private fun locate(step: Step, nodes: List<AccessibilityNodeInfo>): AccessibilityNodeInfo? {
@@ -174,11 +194,11 @@ class DataToggleService : AccessibilityService() {
         false
     }
 
-    // --- Rejeu par mots-cles (quand rien n'a ete appris) ------------------
+    // --- Rejeu par mots-cles (quand rien n'a ete appris) -------------------
 
     internal fun searchByKeywords(): ActionResult {
         handler.post { openQuickSettings() }
-        pause(STEP_MS * 3)
+        pause(START_MS)
 
         val outcome = clickDataTile()
         closePanel()
@@ -197,10 +217,8 @@ class DataToggleService : AccessibilityService() {
             return ActionResult(true, "tuile « $it »")
         }
 
-        // Depuis Android 12 la tuile s'appelle souvent « Internet » et ouvre une
-        // boite de dialogue contenant le vrai interrupteur.
         findAndClick(nodes, INTERNET_KEYWORDS)?.let { opened ->
-            Thread.sleep(900)
+            pause(900)
             val inner = collectNodes()
             inner.forEach { labelOf(it).takeIf { l -> l.isNotBlank() }?.let { l -> seen += l } }
             findAndClick(inner, DATA_KEYWORDS)?.let {
@@ -228,14 +246,13 @@ class DataToggleService : AccessibilityService() {
                 ) {
                     return labelOf(node)
                 }
-
                 if (clickNode(node)) return labelOf(node)
             }
         }
         return null
     }
 
-    // --- Outils ----------------------------------------------------------
+    // --- Outils -----------------------------------------------------------
 
     private fun pause(millis: Long) {
         try {
@@ -279,7 +296,11 @@ class DataToggleService : AccessibilityService() {
         return out
     }
 
-    private fun walk(node: AccessibilityNodeInfo?, into: MutableList<AccessibilityNodeInfo>, depth: Int) {
+    private fun walk(
+        node: AccessibilityNodeInfo?,
+        into: MutableList<AccessibilityNodeInfo>,
+        depth: Int
+    ) {
         if (node == null || depth > 25 || into.size > 800) return
         into += node
         for (i in 0 until node.childCount) walk(node.getChild(i), into, depth + 1)
@@ -296,7 +317,9 @@ class DataToggleService : AccessibilityService() {
 
         private const val TAG = "DataToggleService"
         private const val STEP_MS = 700L
-        private const val MAX_CANDIDATES = 60
+        private const val START_MS = 1800L
+        private const val BETWEEN_MS = 1000L
+        private const val LOCATE_MS = 6000L
 
         private val DATA_KEYWORDS = listOf(
             "donnees mobiles", "mobile data", "donnees cellulaires",
@@ -307,7 +330,15 @@ class DataToggleService : AccessibilityService() {
         @Volatile
         private var instance: DataToggleService? = null
 
+        @Volatile
+        private var recording = false
+        private val recorded = mutableListOf<Step>()
+
         fun isRunning(): Boolean = instance != null
+
+        fun isRecording(): Boolean = recording
+
+        fun recordedCount(): Int = recorded.size
 
         fun isEnabledInSettings(context: Context): Boolean = try {
             val enabled = Settings.Secure.getString(
@@ -320,14 +351,27 @@ class DataToggleService : AccessibilityService() {
             false
         }
 
-        /** @return false si le service d'accessibilite n'est pas actif. */
-        fun capture(onDone: (List<Step>) -> Unit): Boolean {
-            val service = instance ?: return false
-            service.captureCandidates(onDone)
+        /**
+         * Enregistre tous les appuis jusqu'a l'arret, dans n'importe quelle app.
+         *
+         * @return false si le service d'accessibilite n'est pas actif.
+         */
+        fun startRecording(): Boolean {
+            if (instance == null) return false
+            recorded.clear()
+            recording = true
+            Log.i(TAG, "Enregistrement démarré")
             return true
         }
 
-        // --- Bascule -----------------------------------------------------
+        /** @return la suite d'appuis captes, enregistree si elle n'est pas vide. */
+        fun stopRecording(context: Context): List<Step> {
+            recording = false
+            val steps = recorded.toList()
+            if (steps.isNotEmpty()) Recipe.save(context, steps)
+            Log.i(TAG, "Enregistrement arrêté : ${steps.size} appui(s)")
+            return steps
+        }
 
         /**
          * @param target etat voulu. Si les donnees y sont deja, on ne touche a
@@ -350,14 +394,14 @@ class DataToggleService : AccessibilityService() {
             if (!result.ok) return result
 
             // On verifie l'effet reel plutot que de croire l'appui sur parole.
-            Thread.sleep(1200)
+            service.pause(1500)
             return if (MobileData.isEnabled(context) == target) {
                 ActionResult(
                     true,
                     (if (target) "données activées" else "données coupées") + " (" + result.detail + ")"
                 )
             } else {
-                ActionResult(false, "appui effectué (" + result.detail + ") mais l'état n'a pas changé")
+                ActionResult(false, "parcours exécuté (" + result.detail + ") mais l'état n'a pas changé")
             }
         }
 

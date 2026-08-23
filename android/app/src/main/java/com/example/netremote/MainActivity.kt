@@ -203,40 +203,38 @@ class MainActivity : AppCompatActivity() {
      * Les libelles et la disposition des parametres rapides varient trop d'un
      * appareil a l'autre pour etre codes en dur.
      */
+    /**
+     * Enregistre un PARCOURS, pas un appui unique : atteindre les donnees
+     * demande souvent de traverser plusieurs ecrans quand la tuile des
+     * parametres rapides ne repond pas.
+     */
     private fun toggleLearning() {
+        if (DataToggleService.isRecording()) {
+            val steps = DataToggleService.stopRecording(this)
+            log(
+                if (steps.isEmpty()) getString(R.string.learn_none)
+                else getString(
+                    R.string.learn_saved,
+                    steps.size,
+                    steps.joinToString(" → ") { it.describe() }
+                )
+            )
+            refreshUi()
+            return
+        }
+
         if (!DataToggleService.isRunning()) {
             Toast.makeText(this, R.string.learn_needs_service, Toast.LENGTH_LONG).show()
             return
         }
 
-        log(getString(R.string.learn_capturing))
-        binding.btnLearn.isEnabled = false
-
-        DataToggleService.capture { candidates ->
-            runOnUiThread {
-                binding.btnLearn.isEnabled = true
-                showCandidates(candidates)
-            }
-        }
-    }
-
-    /** L'utilisateur designe la bonne entree : l'app ne devine rien. */
-    private fun showCandidates(candidates: List<Step>) {
-        if (candidates.isEmpty()) {
-            log(getString(R.string.learn_none))
-            return
-        }
-
-        val labels = candidates.map { it.describe() }.toTypedArray()
+        DataToggleService.startRecording()
         AlertDialog.Builder(this)
-            .setTitle(R.string.learn_pick)
-            .setItems(labels) { _, which ->
-                Recipe.save(this, listOf(candidates[which]))
-                log(getString(R.string.learn_saved, candidates[which].describe()))
-                refreshUi()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
+            .setTitle(R.string.learn_start)
+            .setMessage(R.string.learn_instructions)
+            .setPositiveButton(android.R.string.ok, null)
             .show()
+        refreshUi()
     }
 
     // --- Role PARTAGER ---------------------------------------------------
@@ -272,6 +270,13 @@ class MainActivity : AppCompatActivity() {
             DataToggleService.isRunning() -> "actif"
             DataToggleService.isEnabledInSettings(this) -> "coché, pas encore démarré"
             else -> "NON ACTIVÉ"
+        }
+
+        if (DataToggleService.isRecording()) {
+            binding.btnLearn.text =
+                getString(R.string.learn_stop, DataToggleService.recordedCount())
+        } else {
+            binding.btnLearn.setText(R.string.learn_start)
         }
 
         binding.txtRecipe.text = Recipe.describe(this)
