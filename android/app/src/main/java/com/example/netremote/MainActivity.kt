@@ -79,6 +79,8 @@ class MainActivity : AppCompatActivity() {
             openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
 
+        binding.btnSelfTest.setOnClickListener { runSelfTest() }
+
         binding.btnLearn.setOnClickListener { toggleLearning() }
 
         binding.btnForgetRecipe.setOnClickListener {
@@ -165,6 +167,33 @@ class MainActivity : AppCompatActivity() {
 
     private fun log(message: String) {
         binding.txtLog.text = clock.format(Date()) + "  " + message
+    }
+
+    // --- Test sur place --------------------------------------------------
+
+    /**
+     * Execute exactement le chemin qu'emprunte une commande distante, mais
+     * depuis le telephone lui-meme.
+     *
+     * Interet : deboguer sans dependre du PC ni du point d'acces. Le message
+     * affiche est celui que le client distant recevrait, mot pour mot.
+     */
+    private fun runSelfTest() {
+        val target = MobileData.isEnabled(this) != true
+        val what = getString(if (target) R.string.self_test_on else R.string.self_test_off)
+
+        binding.btnSelfTest.isEnabled = false
+        binding.txtSelfTest.text = getString(R.string.self_test_running, what)
+
+        worker.execute {
+            val result = MobileData.set(this, target)
+            runOnUiThread {
+                binding.btnSelfTest.isEnabled = true
+                binding.txtSelfTest.text =
+                    (if (result.ok) "OK — " else "ÉCHEC — ") + result.detail
+                refreshUi()
+            }
+        }
     }
 
     // --- Apprentissage de la bascule -------------------------------------

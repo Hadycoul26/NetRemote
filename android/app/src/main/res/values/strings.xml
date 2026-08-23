@@ -25,6 +25,11 @@
     <string name="accessibility_button">Activer le service d\'accessibilité</string>
     <string name="accessibility_hint">Sans Shizuku, la bascule passe par le service d\'accessibilité : il survit aux redémarrages, mais l\'écran du téléphone doit être allumé au moment de la commande.</string>
 
+    <string name="self_test">Tester la bascule ici</string>
+    <string name="self_test_running">Test en cours : %1$s…</string>
+    <string name="self_test_on">activation</string>
+    <string name="self_test_off">coupure</string>
+
     <string name="learn_start">Apprendre la bascule</string>
     <string name="learn_forget">Oublier la séquence</string>
     <string name="learn_capturing">Ouverture des paramètres rapides…</string>

@@ -122,6 +122,20 @@
             android:textAppearance="?attr/textAppearanceBodySmall" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSelfTest"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/self_test" />
+
+        <TextView
+            android:id="@+id/txtSelfTest"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textAppearance="?attr/textAppearanceBodySmall" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnLearn"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
