@@ -78,6 +78,13 @@ class MainActivity : AppCompatActivity() {
             openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
 
+        binding.btnLearn.setOnClickListener { toggleLearning() }
+
+        binding.btnForgetRecipe.setOnClickListener {
+            Recipe.clear(this)
+            refreshUi()
+        }
+
         binding.btnBattery.setOnClickListener {
             openSettings(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
         }
@@ -159,6 +166,34 @@ class MainActivity : AppCompatActivity() {
         binding.txtLog.text = clock.format(Date()) + "  " + message
     }
 
+    // --- Apprentissage de la bascule -------------------------------------
+
+    /**
+     * L'app ne devine plus ou appuyer : l'utilisateur le montre une fois.
+     * Les libelles et la disposition des parametres rapides varient trop d'un
+     * appareil a l'autre pour etre codes en dur.
+     */
+    private fun toggleLearning() {
+        if (DataToggleService.isRecording()) {
+            val steps = DataToggleService.stopLearning(this)
+            log(
+                if (steps.isEmpty()) getString(R.string.learn_none)
+                else getString(R.string.learn_saved, steps.joinToString(" → ") { it.describe() })
+            )
+            refreshUi()
+            return
+        }
+
+        if (!DataToggleService.isRunning()) {
+            Toast.makeText(this, R.string.learn_needs_service, Toast.LENGTH_LONG).show()
+            return
+        }
+
+        Toast.makeText(this, R.string.learn_instructions, Toast.LENGTH_LONG).show()
+        DataToggleService.startLearning()
+        refreshUi()
+    }
+
     // --- Role PARTAGER ---------------------------------------------------
 
     private fun askNotificationsIfNeeded() {
@@ -193,6 +228,13 @@ class MainActivity : AppCompatActivity() {
             DataToggleService.isEnabledInSettings(this) -> "coché, pas encore démarré"
             else -> "NON ACTIVÉ"
         }
+
+        binding.btnLearn.setText(
+            if (DataToggleService.isRecording()) R.string.learn_stop else R.string.learn_start
+        )
+        binding.txtRecipe.text = Recipe.describe(this)
+        binding.btnForgetRecipe.visibility =
+            if (Recipe.exists(this)) View.VISIBLE else View.GONE
 
         binding.txtDiag.text = listOf(
             "Android       : " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")",
