@@ -55,6 +55,22 @@
                 android:value="Serveur local de pilotage des donnees mobiles" />
         </service>
 
+        <!-- Seule voie sans root ni adb pour basculer les donnees : piloter
+             les parametres rapides. L'utilisateur l'active une fois, et le
+             service survit aux redemarrages. -->
+        <service
+            android:name=".DataToggleService"
+            android:exported="true"
+            android:label="@string/accessibility_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"

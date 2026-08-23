@@ -36,16 +36,34 @@ object MobileData {
         }
     }
 
+    /**
+     * Deux voies, essayees dans cet ordre :
+     *
+     *  1. Shizuku — instantane, fonctionne ecran eteint, mais doit etre relance
+     *     apres chaque redemarrage du telephone.
+     *  2. Service d'accessibilite — survit aux redemarrages et ne demande ni
+     *     root ni adb, mais pilote reellement l'interface, donc l'ecran doit
+     *     etre allume.
+     *
+     * En cas d'echec des deux, on rapporte les deux motifs : savoir laquelle a
+     * echoue et pourquoi vaut mieux qu'un « impossible » sec.
+     */
     fun set(context: Context, enable: Boolean): ActionResult {
-        val command = if (enable) "svc data enable" else "svc data disable"
-        val result = ShizukuShell.run(command)
+        if (ShizukuShell.state() == ShizukuState.PRET) {
+            val command = if (enable) "svc data enable" else "svc data disable"
+            val result = ShizukuShell.run(command)
+            if (result.ok) {
+                return ActionResult(
+                    true,
+                    if (enable) "données mobiles activées" else "données mobiles coupées"
+                )
+            }
+            val fallback = DataToggleService.toggleTo(context, enable)
+            return if (fallback.ok) fallback
+            else ActionResult(false, "Shizuku : " + result.detail + " | accessibilité : " + fallback.detail)
+        }
 
-        if (!result.ok) return result
-
-        return ActionResult(
-            true,
-            if (enable) "données mobiles activées" else "données mobiles coupées"
-        )
+        return DataToggleService.toggleTo(context, enable)
     }
 
     fun describe(context: Context): String = when (isEnabled(context)) {

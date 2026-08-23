@@ -20,6 +20,11 @@
     <string name="serve_failed">Échec du démarrage : %1$s</string>
     <string name="shizuku_hint">Shizuku est nécessaire uniquement ici, pour obéir aux commandes. Le téléphone qui contrôle n\'en a pas besoin.</string>
 
+    <string name="accessibility_label">NetRemote — bascule des données</string>
+    <string name="accessibility_description">Permet à NetRemote d\'activer ou couper les données mobiles en pilotant les paramètres rapides. C\'est la seule méthode possible sans root ni adb, et elle survit aux redémarrages.</string>
+    <string name="accessibility_button">Activer le service d\'accessibilité</string>
+    <string name="accessibility_hint">Sans Shizuku, la bascule passe par le service d\'accessibilité : il survit aux redémarrages, mais l\'écran du téléphone doit être allumé au moment de la commande.</string>
+
     <string name="shizuku_button">Autoriser Shizuku</string>
     <string name="shizuku_ready">Shizuku est déjà prêt.</string>
     <string name="shizuku_absent">Shizuku n\'est pas lancé. Ouvrez l\'app Shizuku et démarrez le service — à refaire après chaque redémarrage.</string>

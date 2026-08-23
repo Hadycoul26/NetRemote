@@ -74,6 +74,10 @@ class MainActivity : AppCompatActivity() {
             refreshUi()
         }
 
+        binding.btnAccessibility.setOnClickListener {
+            openSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+
         binding.btnBattery.setOnClickListener {
             openSettings(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
         }
@@ -184,11 +188,18 @@ class MainActivity : AppCompatActivity() {
             ShizukuState.ABSENT -> "NON LANCÉ"
         }
 
+        val accessibility = when {
+            DataToggleService.isRunning() -> "actif"
+            DataToggleService.isEnabledInSettings(this) -> "coché, pas encore démarré"
+            else -> "NON ACTIVÉ"
+        }
+
         binding.txtDiag.text = listOf(
-            "Android   : " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")",
-            "Serveur   : " + if (ServerService.isRunning) "actif" else "arrêté",
-            "Shizuku   : " + shizuku,
-            "Mes données : " + MobileData.describe(this)
+            "Android       : " + Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")",
+            "Serveur       : " + if (ServerService.isRunning) "actif" else "arrêté",
+            "Shizuku       : " + shizuku,
+            "Accessibilité : " + accessibility,
+            "Mes données   : " + MobileData.describe(this)
         ).joinToString("\n")
 
         // Shizuku n'est necessaire que pour obeir, pas pour commander.

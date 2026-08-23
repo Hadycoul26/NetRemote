@@ -81,6 +81,8 @@ def check_references():
                  for f in glob.glob(os.path.join(RES, 'drawable', '*.xml'))}
     mipmaps = {os.path.splitext(os.path.basename(f))[0]
                for f in glob.glob(os.path.join(RES, 'mipmap-anydpi-v26', '*.xml'))}
+    xmls = {os.path.splitext(os.path.basename(f))[0]
+            for f in glob.glob(os.path.join(RES, 'xml', '*.xml'))}
 
     android = '{http://schemas.android.com/apk/res/android}id'
     layout_path = os.path.join(RES, 'layout', 'activity_main.xml')
@@ -97,10 +99,11 @@ def check_references():
         if name != 'root' and name not in ids:
             problems.append('binding.%s : aucun @+id correspondant dans le layout' % name)
 
-    pools = {'string': strings, 'drawable': drawables, 'mipmap': mipmaps, 'color': colors}
+    pools = {'string': strings, 'drawable': drawables, 'mipmap': mipmaps,
+             'color': colors, 'xml': xmls}
     xml_text = read(layout_path) + read(MANIFEST) + read(
         os.path.join(RES, 'mipmap-anydpi-v26', 'ic_launcher.xml'))
-    for kind, name in sorted(set(re.findall(r'@(string|drawable|mipmap|color)/(\w+)', xml_text))):
+    for kind, name in sorted(set(re.findall(r'@(string|drawable|mipmap|color|xml)/(\w+)', xml_text))):
         if name not in pools[kind]:
             problems.append('@%s/%s : introuvable' % (kind, name))
 
