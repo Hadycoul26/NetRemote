@@ -78,6 +78,8 @@ def show_state(state):
     print('  appareil : %s (%s)' % (state.get('device', '?'), state.get('platform', '?')))
     print('  état     : %s' % ('CONNECTÉ' if state.get('connected') else 'COUPÉ'))
     print('  détail   : %s' % state.get('detail', ''))
+    if state.get('method'):
+        print('  bascule  : par %s' % state['method'])
     if state.get('warning'):
         print('  ATTENTION: %s' % state['warning'])
     print('  commandes: --on (activer)   --off (couper)')

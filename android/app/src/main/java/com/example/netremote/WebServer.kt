@@ -43,12 +43,24 @@ class WebServer(
     }
 
     private fun buildState(): JSONObject {
-        val warning = when (ShizukuShell.state()) {
-            ShizukuState.ABSENT ->
-                "Shizuku n'est pas lancé : l'état est lisible, mais le basculement échouera."
-            ShizukuState.NON_AUTORISE ->
-                "Permission Shizuku non accordée sur l'appareil cible."
-            ShizukuState.PRET -> ""
+        // Deux voies independantes basculent les donnees. L'avertissement ne
+        // doit alarmer que si les DEUX manquent : signaler l'absence de Shizuku
+        // alors que l'accessibilite fait le travail est un mensonge.
+        val shizukuReady = ShizukuShell.state() == ShizukuState.PRET
+        val accessibilityReady = DataToggleService.isRunning()
+
+        val method = when {
+            shizukuReady -> "Shizuku"
+            accessibilityReady -> "accessibilité"
+            else -> "aucune"
+        }
+
+        val warning = if (shizukuReady || accessibilityReady) {
+            ""
+        } else {
+            "Aucune voie de bascule active sur l'appareil cible. Activez le " +
+                "service d'accessibilité de NetRemote dans Réglages → Accessibilité. " +
+                "Shizuku est facultatif."
         }
 
         return JSONObject()
@@ -56,6 +68,7 @@ class WebServer(
             .put("device", Build.MANUFACTURER + " " + Build.MODEL)
             .put("connected", MobileData.isEnabled(context) == true)
             .put("detail", MobileData.describe(context))
+            .put("method", method)
             .put("warning", warning)
     }
 
