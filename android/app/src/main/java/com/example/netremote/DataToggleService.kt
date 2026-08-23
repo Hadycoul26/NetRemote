@@ -12,8 +12,6 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import java.text.Normalizer
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /**
  * Bascule les donnees mobiles en pilotant les parametres rapides.
@@ -100,50 +98,69 @@ class DataToggleService : AccessibilityService() {
         handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS) }, STEP_MS)
     }
 
+    /**
+     * Tourne sur le thread appelant (une requete HTTP), jamais sur le thread
+     * principal : les attentes entre etapes le bloqueraient plusieurs secondes,
+     * assez pour declencher un ANR.
+     */
     internal fun replayLearned(steps: List<Step>): ActionResult {
-        val latch = CountDownLatch(1)
-        var outcome = ActionResult(false, "délai dépassé")
-
         handler.post { openQuickSettings() }
+        pause(STEP_MS * 3)
 
-        handler.postDelayed({
-            val done = mutableListOf<String>()
-            for ((index, step) in steps.withIndex()) {
-                if (!playStep(step)) {
-                    outcome = ActionResult(
-                        false,
-                        "étape ${index + 1} (${step.describe()}) irrejouable"
-                    )
-                    latch.countDown()
-                    return@postDelayed
-                }
-                done += step.describe()
-                Thread.sleep(700)
+        val done = mutableListOf<String>()
+        for ((index, step) in steps.withIndex()) {
+            if (!playStep(step)) {
+                closePanel()
+                return ActionResult(
+                    false,
+                    "étape ${index + 1} (${step.describe()}) irrejouable"
+                )
             }
-            outcome = ActionResult(true, "séquence rejouée : " + done.joinToString(" → "))
-            latch.countDown()
-        }, STEP_MS * 2)
+            done += step.describe()
+            pause(700)
+        }
 
-        awaitAndClose(latch)
-        return outcome
+        closePanel()
+        return ActionResult(true, "séquence rejouée : " + done.joinToString(" → "))
     }
 
-    /** Identifiant de ressource, puis libelle, puis coordonnees. */
+    /**
+     * On localise la tuile par son identifiant, puis on y envoie un VRAI
+     * toucher plutot qu'un ACTION_CLICK.
+     *
+     * La distinction est capitale : sur les tuiles des parametres rapides,
+     * l'action d'accessibilite est souvent cablee sur « ouvrir les reglages
+     * detailles », alors qu'un appui reel bascule. Observe sur l'appareil :
+     * ACTION_CLICK ouvrait les parametres de connexion au lieu de basculer.
+     *
+     * Localiser d'abord donne les coordonnees ACTUELLES, donc on ne depend pas
+     * d'une position figee a l'apprentissage.
+     */
     private fun playStep(step: Step): Boolean {
-        val nodes = collectNodes()
+        val node = locate(step, collectNodes())
 
-        if (step.viewId.isNotBlank()) {
-            nodes.firstOrNull { it.viewIdResourceName == step.viewId }
-                ?.let { if (clickNode(it)) return true }
+        if (node != null) {
+            val bounds = Rect().also { node.getBoundsInScreen(it) }
+            if (bounds.width() > 0 && bounds.height() > 0) {
+                if (tapAt(bounds.centerX(), bounds.centerY())) return true
+            }
         }
 
+        if (step.x > 0 && step.y > 0 && tapAt(step.x, step.y)) return true
+
+        // Dernier recours seulement : il peut ouvrir les reglages au lieu de basculer.
+        return node != null && clickNode(node)
+    }
+
+    private fun locate(step: Step, nodes: List<AccessibilityNodeInfo>): AccessibilityNodeInfo? {
+        if (step.viewId.isNotBlank()) {
+            nodes.firstOrNull { it.viewIdResourceName == step.viewId }?.let { return it }
+        }
         if (step.label.isNotBlank()) {
             val wanted = normalize(step.label)
-            nodes.firstOrNull { normalize(labelOf(it)) == wanted }
-                ?.let { if (clickNode(it)) return true }
+            nodes.firstOrNull { normalize(labelOf(it)) == wanted }?.let { return it }
         }
-
-        return if (step.x > 0 && step.y > 0) tapAt(step.x, step.y) else false
+        return null
     }
 
     private fun tapAt(x: Int, y: Int): Boolean = try {
@@ -160,16 +177,11 @@ class DataToggleService : AccessibilityService() {
     // --- Rejeu par mots-cles (quand rien n'a ete appris) ------------------
 
     internal fun searchByKeywords(): ActionResult {
-        val latch = CountDownLatch(1)
-        var outcome = ActionResult(false, "délai dépassé")
-
         handler.post { openQuickSettings() }
-        handler.postDelayed({
-            outcome = clickDataTile()
-            latch.countDown()
-        }, STEP_MS * 2)
+        pause(STEP_MS * 3)
 
-        awaitAndClose(latch)
+        val outcome = clickDataTile()
+        closePanel()
         return outcome
     }
 
@@ -203,11 +215,20 @@ class DataToggleService : AccessibilityService() {
         return ActionResult(false, "tuile introuvable. Vu : " + summary(seen))
     }
 
+    /** Meme principe que playStep : vrai toucher d'abord, ACTION_CLICK ensuite. */
     private fun findAndClick(nodes: List<AccessibilityNodeInfo>, keywords: List<String>): String? {
         for (keyword in keywords) {
             for (node in nodes) {
                 val label = normalize(labelOf(node))
                 if (label.isEmpty() || !label.contains(keyword)) continue
+
+                val bounds = Rect().also { node.getBoundsInScreen(it) }
+                if (bounds.width() > 0 && bounds.height() > 0 &&
+                    tapAt(bounds.centerX(), bounds.centerY())
+                ) {
+                    return labelOf(node)
+                }
+
                 if (clickNode(node)) return labelOf(node)
             }
         }
@@ -216,12 +237,15 @@ class DataToggleService : AccessibilityService() {
 
     // --- Outils ----------------------------------------------------------
 
-    private fun awaitAndClose(latch: CountDownLatch) {
+    private fun pause(millis: Long) {
         try {
-            latch.await(TIMEOUT_S, TimeUnit.SECONDS)
+            Thread.sleep(millis)
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
         }
+    }
+
+    private fun closePanel() {
         handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 400L)
     }
 
@@ -272,7 +296,6 @@ class DataToggleService : AccessibilityService() {
 
         private const val TAG = "DataToggleService"
         private const val STEP_MS = 700L
-        private const val TIMEOUT_S = 15L
         private const val MAX_CANDIDATES = 60
 
         private val DATA_KEYWORDS = listOf(
