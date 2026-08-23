@@ -19,64 +19,92 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="4dp"
             android:text="@string/intro"
-            android:textAppearance="?attr/textAppearanceBodyMedium" />
+            android:textAppearance="?attr/textAppearanceBodySmall" />
 
-        <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/switchServer"
+        <!-- ============ CONTROLER ============ -->
+
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
-            android:minHeight="56dp"
-            android:text="@string/server_enable"
+            android:text="@string/control_title"
             android:textAppearance="?attr/textAppearanceTitleMedium" />
 
         <TextView
-            android:id="@+id/txtUrls"
+            android:id="@+id/txtTarget"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:fontFamily="monospace"
-            android:textAppearance="?attr/textAppearanceBodyMedium"
-            android:textIsSelectable="true" />
+            android:minHeight="72dp"
+            android:text="@string/searching"
+            android:textAppearance="?attr/textAppearanceBodyMedium" />
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnNewKey"
+            android:id="@+id/btnDataOn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/data_on" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDataOff"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/data_off" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnScan"
             style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/new_key" />
+            android:text="@string/rescan" />
+
+        <TextView
+            android:id="@+id/txtLog"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textAppearance="?attr/textAppearanceBodySmall" />
 
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="24dp"
             android:background="?attr/colorOutlineVariant" />
+
+        <!-- ============ PARTAGER ============ -->
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="@string/debug_title"
+            android:text="@string/serve_title"
             android:textAppearance="?attr/textAppearanceTitleMedium" />
 
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/switchServe"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="56dp"
+            android:text="@string/serve_enable" />
+
         <TextView
-            android:id="@+id/txtDiag"
+            android:id="@+id/txtServeInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="?attr/textAppearanceBodySmall" />
+
+        <TextView
+            android:id="@+id/txtShizukuHint"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:fontFamily="monospace"
+            android:text="@string/shizuku_hint"
             android:textAppearance="?attr/textAppearanceBodySmall"
-            android:textIsSelectable="true" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnRefresh"
-            style="@style/Widget.Material3.Button.OutlinedButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="@string/refresh" />
+            android:visibility="gone" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnShizuku"
@@ -86,12 +114,20 @@
             android:layout_marginTop="8dp"
             android:text="@string/shizuku_button" />
 
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="24dp"
+            android:background="?attr/colorOutlineVariant" />
+
         <TextView
+            android:id="@+id/txtDiag"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="@string/battery_hint"
-            android:textAppearance="?attr/textAppearanceBodySmall" />
+            android:fontFamily="monospace"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textIsSelectable="true" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnBattery"

@@ -27,7 +27,6 @@ import json
 import os
 import platform
 import re
-import secrets
 import socket
 import subprocess
 import sys
@@ -38,28 +37,8 @@ from urllib.parse import urlparse, parse_qs
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.join(os.path.dirname(HERE), 'web')
-KEY_FILE = os.path.join(HERE, '.netremote_key')
 
-KEY_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 IS_WINDOWS = platform.system() == 'Windows'
-
-
-# --------------------------------------------------------------------------
-# Cle d'acces
-# --------------------------------------------------------------------------
-
-def load_or_create_key():
-    """La cle survit aux redemarrages : sinon les clients devraient la ressaisir."""
-    if os.path.exists(KEY_FILE):
-        with open(KEY_FILE, 'r', encoding='utf-8') as handle:
-            key = handle.read().strip()
-        if key:
-            return key
-
-    key = ''.join(secrets.choice(KEY_ALPHABET) for _ in range(6))
-    with open(KEY_FILE, 'w', encoding='utf-8') as handle:
-        handle.write(key)
-    return key
 
 
 # --------------------------------------------------------------------------
@@ -309,13 +288,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
-        key = (params.get('k') or [''])[0]
-
         if parsed.path in ('/', '/index.html'):
             return self.send_page()
-
-        if not secrets.compare_digest(key.upper(), self.server.access_key):
-            return self.send_json({'error': 'unauthorized'}, status=401)
 
         if parsed.path == '/api/state':
             return self.send_json(self.build_state())
@@ -448,18 +422,15 @@ def main():
         print('Aucune carte reseau detectee.', file=sys.stderr)
         return 1
 
-    key = load_or_create_key()
     admin = is_admin()
 
     server = ThreadingHTTPServer((args.bind, args.port), Handler)
-    server.access_key = key
     server.adapter = adapter
     server.admin = admin
     server.dry_run = args.dry_run
 
     print('NetRemote — serveur PC')
     print('  carte pilotee : %s' % adapter)
-    print('  cle d acces   : %s' % key)
     if args.dry_run:
         print('  MODE SIMULATION : aucune carte ne sera reellement basculee.')
     if not admin:
@@ -467,7 +438,7 @@ def main():
         print('              La lecture d etat marche, le basculement echouera.')
     print('  URL a ouvrir depuis un appareil connecte au point d acces :')
     for address in local_addresses():
-        print('    http://%s:%d/?k=%s' % (address, args.port, key))
+        print('    http://%s:%d/' % (address, args.port))
     print('  Ctrl+C pour arreter.')
 
     try:

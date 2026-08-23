@@ -10,7 +10,7 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action ?: return
         if (action !in HANDLED) return
-        if (!Prefs.isEnabled(context)) return
+        if (!Prefs.isServing(context)) return
 
         ServerService.start(context)
     }

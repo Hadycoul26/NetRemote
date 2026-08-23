@@ -36,7 +36,7 @@ class ServerService : Service() {
         startForeground(NOTIF_ID, buildNotification())
 
         if (intent?.action == ACTION_STOP) {
-            Prefs.setEnabled(this, false)
+            Prefs.setServing(this, false)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -53,7 +53,7 @@ class ServerService : Service() {
 
     /** Aligne l'etat reel du serveur sur la preference, dans les deux sens. */
     private fun reconcile() {
-        val shouldRun = Prefs.isEnabled(this)
+        val shouldRun = Prefs.isServing(this)
         if (shouldRun == (server != null)) return
 
         if (shouldRun) startServer() else stopServer()

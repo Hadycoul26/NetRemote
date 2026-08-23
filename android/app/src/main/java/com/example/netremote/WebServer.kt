@@ -9,13 +9,13 @@ import org.json.JSONObject
 /**
  * Serveur HTTP local, heberge par [ServerService].
  *
- * Expose exactement la meme API que le serveur PC : le client web est un seul
- * fichier, servi ici depuis les assets et la-bas depuis le disque.
+ * Aucune authentification : le point d'acces est prive et son proprietaire
+ * choisit qui s'y connecte. La barriere est le mot de passe du point d'acces,
+ * pas une cle supplementaire.
  *
- * A la difference du serveur PC, couper la cible ne deconnecte pas le client :
- * on coupe les donnees mobiles, pas le point d'acces. Le Wi-Fi local reste
- * debout, donc la page reste joignable pour rallumer. Aucun garde-fou
- * anti-auto-deconnexion n'est necessaire de ce cote.
+ * Couper la cible ne deconnecte pas le client : on coupe les donnees mobiles,
+ * pas le point d'acces. Le Wi-Fi local reste debout, donc le client garde la
+ * main pour rallumer.
  */
 class WebServer(
     private val context: Context,
@@ -24,47 +24,37 @@ class WebServer(
 
     override fun serve(session: IHTTPSession): Response {
         return try {
-            val path = session.uri
-            if (path == "/" || path == "/index.html") return servePage()
-
-            val token = session.parameters["k"]?.firstOrNull()
-            if (!Prefs.isTokenValid(context, token)) {
-                return json(Response.Status.UNAUTHORIZED, JSONObject().put("error", "unauthorized"))
-            }
-
-            when (path) {
-                "/api/state" -> json(Response.Status.OK, buildState())
+            when (session.uri) {
+                "/", "/index.html" -> servePage()
+                "/api/state" -> json(buildState())
                 "/api/set" -> {
                     val on = (session.parameters["on"]?.firstOrNull() ?: "1") == "1"
-                    json(Response.Status.OK, apply(on))
+                    json(apply(on))
                 }
-                else -> json(Response.Status.NOT_FOUND, JSONObject().put("error", "not found"))
+                else -> json(JSONObject().put("error", "not found"), Response.Status.NOT_FOUND)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Requete en erreur", e)
             json(
-                Response.Status.INTERNAL_ERROR,
-                JSONObject().put("error", e.javaClass.simpleName)
+                JSONObject().put("error", e.javaClass.simpleName),
+                Response.Status.INTERNAL_ERROR
             )
         }
     }
 
     private fun buildState(): JSONObject {
-        val enabled = MobileData.isEnabled(context)
-
         val warning = when (ShizukuShell.state()) {
             ShizukuState.ABSENT ->
-                "Shizuku n'est pas lancé : la lecture fonctionne, le basculement échouera. " +
-                    "À relancer après chaque redémarrage du téléphone."
+                "Shizuku n'est pas lancé : l'état est lisible, mais le basculement échouera."
             ShizukuState.NON_AUTORISE ->
-                "Permission Shizuku non accordée : ouvrez NetRemote sur le téléphone."
+                "Permission Shizuku non accordée sur l'appareil cible."
             ShizukuState.PRET -> ""
         }
 
         return JSONObject()
             .put("platform", "android")
             .put("device", Build.MANUFACTURER + " " + Build.MODEL)
-            .put("connected", enabled == true)
+            .put("connected", MobileData.isEnabled(context) == true)
             .put("detail", MobileData.describe(context))
             .put("warning", warning)
     }
@@ -90,8 +80,12 @@ class WebServer(
         }
     }
 
-    private fun json(status: Response.Status, payload: JSONObject): Response =
-        newFixedLengthResponse(status, "application/json; charset=utf-8", payload.toString())
+    private fun json(
+        payload: JSONObject,
+        status: Response.Status = Response.Status.OK
+    ): Response = newFixedLengthResponse(
+        status, "application/json; charset=utf-8", payload.toString()
+    )
 
     private companion object {
         const val TAG = "WebServer"

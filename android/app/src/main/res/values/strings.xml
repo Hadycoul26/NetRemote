@@ -2,27 +2,33 @@
 <resources>
     <string name="app_name">NetRemote</string>
 
-    <string name="intro">Active un serveur local sur ce téléphone. Depuis un PC ou un autre appareil connecté à son point d\'accès, ouvre l\'adresse ci-dessous dans un navigateur pour activer ou couper les données mobiles.\n\nLe point d\'accès doit être activé à la main : le serveur ne peut pas l\'allumer, puisqu\'il faut y être connecté pour l\'atteindre.</string>
+    <string name="intro">Le même app sur les deux téléphones. Celui qui partage active « Partager » ; celui qui est connecté à son point d\'accès le voit apparaître ci-dessous.</string>
 
-    <string name="server_enable">Serveur local</string>
-    <string name="server_off">Serveur arrêté.</string>
-    <string name="server_failed">Serveur en échec : %1$s</string>
-    <string name="server_no_address">Serveur actif, mais aucune adresse réseau détectée. Le point d\'accès est-il allumé ?</string>
-    <string name="new_key">Générer une nouvelle clé</string>
+    <string name="control_title">Contrôler l\'appareil connecté</string>
+    <string name="searching">Recherche de l\'appareil…</string>
+    <string name="looking_for">Interrogation de %1$s…</string>
+    <string name="no_gateway">Aucun appareil : ce téléphone est-il connecté à un point d\'accès ?</string>
+    <string name="target_unreachable">%1$s ne répond pas. NetRemote est-il lancé dessus, avec « Partager » activé ?</string>
+    <string name="data_on">Activer les données</string>
+    <string name="data_off">Couper les données</string>
+    <string name="rescan">Rechercher à nouveau</string>
 
-    <string name="debug_title">Diagnostic</string>
-    <string name="refresh">Rafraîchir</string>
+    <string name="serve_title">Partager depuis ce téléphone</string>
+    <string name="serve_enable">Accepter les commandes</string>
+    <string name="serve_off">Arrêté. Ce téléphone n\'accepte aucune commande.</string>
+    <string name="serve_on">Actif sur le port %1$d. %2$s</string>
+    <string name="serve_failed">Échec du démarrage : %1$s</string>
+    <string name="shizuku_hint">Shizuku est nécessaire uniquement ici, pour obéir aux commandes. Le téléphone qui contrôle n\'en a pas besoin.</string>
 
     <string name="shizuku_button">Autoriser Shizuku</string>
     <string name="shizuku_ready">Shizuku est déjà prêt.</string>
-    <string name="shizuku_absent">Shizuku n\'est pas lancé. Ouvrez l\'app Shizuku et démarrez le service — à refaire après chaque redémarrage du téléphone.</string>
+    <string name="shizuku_absent">Shizuku n\'est pas lancé. Ouvrez l\'app Shizuku et démarrez le service — à refaire après chaque redémarrage.</string>
 
-    <string name="battery_hint">Pour que le serveur survive en arrière-plan, désactivez l\'optimisation de batterie pour cette app (indispensable sur Xiaomi, Huawei, Oppo, Samsung).</string>
     <string name="battery_settings">Optimisation de la batterie</string>
 
     <string name="channel_name">Serveur local</string>
-    <string name="channel_description">Notification permanente indiquant que le serveur est actif.</string>
-    <string name="notif_title">NetRemote actif</string>
+    <string name="channel_description">Notification permanente indiquant que ce téléphone accepte les commandes.</string>
+    <string name="notif_title">NetRemote — partage actif</string>
     <string name="notif_stopped">Serveur arrêté.</string>
     <string name="notif_no_address">Aucune adresse réseau — point d\'accès éteint ?</string>
     <string name="action_stop">Arrêter</string>

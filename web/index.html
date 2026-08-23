@@ -49,12 +49,6 @@
 <h1>NetRemote</h1>
 <p class="sub" id="host">Connexion au serveur…</p>
 
-<div id="auth" class="card" hidden>
-  <p>Entrez la clé affichée par le serveur.</p>
-  <input id="key" placeholder="clé" autocapitalize="characters" autocomplete="off">
-  <button id="login">Entrer</button>
-</div>
-
 <div id="panel" hidden>
   <div class="card">
     <div class="state">
@@ -75,13 +69,6 @@
 (function () {
   var $ = function (id) { return document.getElementById(id); };
 
-  function storedKey() {
-    var fromUrl = new URLSearchParams(location.search).get('k');
-    if (fromUrl) { try { localStorage.setItem('netremote_key', fromUrl); } catch (e) {} return fromUrl; }
-    try { return localStorage.getItem('netremote_key') || ''; } catch (e) { return ''; }
-  }
-
-  var key = storedKey();
   var busy = false;
 
   function log(message) {
@@ -90,22 +77,11 @@
 
   function api(path, params) {
     var query = new URLSearchParams(params || {});
-    query.set('k', key);
     return fetch(path + '?' + query.toString(), { cache: 'no-store' })
-      .then(function (response) {
-        if (response.status === 401) { throw new Error('unauthorized'); }
-        return response.json();
-      });
-  }
-
-  function showAuth() {
-    $('auth').hidden = false;
-    $('panel').hidden = true;
-    $('host').textContent = 'Clé requise';
+      .then(function (response) { return response.json(); });
   }
 
   function render(state) {
-    $('auth').hidden = true;
     $('panel').hidden = false;
 
     $('host').textContent = state.platform === 'android'
@@ -127,8 +103,7 @@
     return api('/api/state')
       .then(render)
       .catch(function (error) {
-        if (error.message === 'unauthorized') { showAuth(); }
-        else { $('host').textContent = 'Serveur injoignable'; }
+        $('host').textContent = 'Serveur injoignable';
       });
   }
 
@@ -143,7 +118,7 @@
         log((result.ok ? 'OK — ' : 'ÉCHEC — ') + (result.detail || ''));
       })
       .catch(function (error) {
-        log(error.message === 'unauthorized' ? 'Clé refusée' : 'Serveur injoignable');
+        log('Serveur injoignable');
       })
       .then(function () {
         busy = false;
@@ -155,14 +130,7 @@
   $('btnOn').onclick = function () { setConnection(true); };
   $('btnOff').onclick = function () { setConnection(false); };
 
-  $('login').onclick = function () {
-    key = $('key').value.trim().toUpperCase();
-    try { localStorage.setItem('netremote_key', key); } catch (e) {}
-    refresh();
-  };
-  $('key').onkeydown = function (e) { if (e.key === 'Enter') { $('login').click(); } };
-
-  if (!key) { showAuth(); } else { refresh(); }
+  refresh();
   setInterval(function () { if (!busy && !$('panel').hidden) { refresh(); } }, 5000);
 })();
 </script>

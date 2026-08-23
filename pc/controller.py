@@ -25,7 +25,6 @@ import urllib.error
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-KEY_CACHE = os.path.join(HERE, '.netremote_client_key')
 DEFAULT_PORT = 8080
 TIMEOUT = 15
 
@@ -53,18 +52,6 @@ def default_gateway():
     code, out = run(['ip', 'route', 'show', 'default'])
     match = re.search(r'default via (\d+\.\d+\.\d+\.\d+)', out)
     return match.group(1) if match else None
-
-
-def load_key():
-    if os.path.exists(KEY_CACHE):
-        with open(KEY_CACHE, 'r', encoding='utf-8') as handle:
-            return handle.read().strip()
-    return ''
-
-
-def save_key(key):
-    with open(KEY_CACHE, 'w', encoding='utf-8') as handle:
-        handle.write(key)
 
 
 def call(host, port, path, params):
@@ -101,7 +88,6 @@ def main():
     parser = argparse.ArgumentParser(description='NetRemote — contrôleur')
     parser.add_argument('--host', help='adresse de la cible (sinon : la passerelle)')
     parser.add_argument('--port', type=int, default=DEFAULT_PORT)
-    parser.add_argument('--key', help='clé affichée par la cible')
     parser.add_argument('--on', action='store_true')
     parser.add_argument('--off', action='store_true')
     args = parser.parse_args()
@@ -111,26 +97,14 @@ def main():
         print('Aucune passerelle : es-tu connecté au point d\'accès ?', file=sys.stderr)
         return 1
 
-    key = args.key or load_key()
-    if not key:
-        print('Cible détectée : %s' % host)
-        key = input('Clé affichée sur l\'appareil : ').strip().upper()
-    if not key:
-        print('Clé requise.', file=sys.stderr)
-        return 1
-
     print('Cible : %s:%d' % (host, args.port))
-    state = call(host, args.port, '/api/state', {'k': key})
+    state = call(host, args.port, '/api/state', {})
 
-    if state.get('error') == 'unauthorized':
-        print('Clé refusée.', file=sys.stderr)
-        return 1
     if 'error' in state:
         print('Injoignable (%s). La cible est-elle allumée et le serveur actif ?'
               % state['error'], file=sys.stderr)
         return 1
 
-    save_key(key)
     show_state(state)
 
     if not args.on and not args.off:
@@ -138,7 +112,7 @@ def main():
 
     wanted = '1' if args.on else '0'
     print('\nEnvoi de la commande…')
-    result = call(host, args.port, '/api/set', {'k': key, 'on': wanted})
+    result = call(host, args.port, '/api/set', {'on': wanted})
 
     if 'error' in result:
         print('  ÉCHEC : %s' % result['error'], file=sys.stderr)
@@ -147,7 +121,7 @@ def main():
     print('  %s %s' % ('OK   :' if result.get('ok') else 'ÉCHEC:', result.get('detail', '')))
 
     print('\nÉtat après commande :')
-    show_state(call(host, args.port, '/api/state', {'k': key}))
+    show_state(call(host, args.port, '/api/state', {}))
     return 0 if result.get('ok') else 1
 
 
