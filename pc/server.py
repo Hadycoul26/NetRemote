@@ -31,6 +31,7 @@ import secrets
 import socket
 import subprocess
 import sys
+import time
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -105,8 +106,38 @@ def powershell(script):
         return code, None
 
 
+_ADAPTER_CACHE = {'at': 0.0, 'data': None}
+# 10 s et non 3 : sur cette machine un demarrage de PowerShell prend 3 a 7 s,
+# donc un TTL plus court expire avant meme l'appel suivant et ne sert a rien.
+# La justesse est preservee par invalidate_adapter_cache() apres chaque
+# basculement : seules nos propres commandes changent l'etat.
+_ADAPTER_TTL = 10.0
+
+
 def list_adapters():
-    """[{name, enabled, connected, description, index}] pour chaque carte."""
+    """
+    [{name, enabled, connected, description, index}] pour chaque carte.
+
+    Le resultat est garde quelques secondes : demarrer PowerShell coute 3 a 5 s
+    sur une machine chargee, et le client interroge l'etat en boucle. Sans ce
+    cache, une sequence etat -> commande -> etat depasse le delai d'attente.
+    """
+    now = time.monotonic()
+    if _ADAPTER_CACHE['data'] is not None and now - _ADAPTER_CACHE['at'] < _ADAPTER_TTL:
+        return _ADAPTER_CACHE['data']
+
+    adapters = _read_adapters()
+    _ADAPTER_CACHE['at'] = now
+    _ADAPTER_CACHE['data'] = adapters
+    return adapters
+
+
+def invalidate_adapter_cache():
+    """Apres un basculement, l'etat en cache est faux : on force une relecture."""
+    _ADAPTER_CACHE['data'] = None
+
+
+def _read_adapters():
     if not IS_WINDOWS:
         code, out = run(['ip', '-o', 'link', 'show'])
         adapters = []
@@ -344,6 +375,7 @@ class Handler(BaseHTTPRequestHandler):
                               % (name, 'activée' if enable else 'désactivée')}
 
         code, output = set_adapter(name, enable)
+        invalidate_adapter_cache()
         if code == 0:
             return {'ok': True,
                     'detail': ('Carte « %s » %s' % (name, 'activée' if enable else 'désactivée'))}
