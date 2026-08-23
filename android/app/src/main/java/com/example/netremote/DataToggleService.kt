@@ -49,27 +49,48 @@ class DataToggleService : AccessibilityService() {
 
     override fun onInterrupt() = Unit
 
-    // --- Apprentissage ---------------------------------------------------
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (!recording || event == null) return
-        if (event.eventType != AccessibilityEvent.TYPE_VIEW_CLICKED) return
+    // --- Apprentissage : capture du panneau ------------------------------
 
-        val node = event.source ?: return
-        val bounds = Rect().also { node.getBoundsInScreen(it) }
+    /**
+     * Ouvre les parametres rapides, releve tout ce qui s'y trouve, referme.
+     *
+     * On ne guette plus les clics de l'utilisateur : les tuiles n'emettent pas
+     * d'evenement exploitable. On lit le panneau et on laisse l'utilisateur
+     * designer la bonne entree, ce qui ne depend d'aucun evenement.
+     */
+    internal fun captureCandidates(onDone: (List<Step>) -> Unit) {
+        handler.post { openQuickSettings() }
 
-        val step = Step(
-            viewId = node.viewIdResourceName.orEmpty(),
-            label = (node.text?.toString() ?: node.contentDescription?.toString()).orEmpty(),
-            x = bounds.centerX(),
-            y = bounds.centerY()
-        )
+        handler.postDelayed({
+            val clickable = mutableListOf<Step>()
+            val others = mutableListOf<Step>()
 
-        // Un appui hors ecran n'est pas rejouable : inutile de le garder.
-        if (step.viewId.isBlank() && step.label.isBlank() && step.x <= 0) return
+            for (node in collectNodes()) {
+                val label = labelOf(node)
+                val id = node.viewIdResourceName.orEmpty()
+                if (label.isBlank() && id.isBlank()) continue
 
-        recorded += step
-        Log.i(TAG, "Appui enregistré : " + step.describe())
+                val bounds = Rect().also { node.getBoundsInScreen(it) }
+                if (bounds.width() <= 0 || bounds.height() <= 0) continue
+
+                val step = Step(id, label, bounds.centerX(), bounds.centerY())
+                if (node.isClickable || node.parent?.isClickable == true) {
+                    clickable += step
+                } else {
+                    others += step
+                }
+            }
+
+            // Les elements cliquables d'abord : ce sont les candidats plausibles.
+            val candidates = (clickable + others)
+                .distinctBy { it.viewId + "|" + it.label }
+                .take(MAX_CANDIDATES)
+
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            handler.post { onDone(candidates) }
+        }, STEP_MS * 3)
     }
 
     // --- Rejeu -----------------------------------------------------------
@@ -252,6 +273,7 @@ class DataToggleService : AccessibilityService() {
         private const val TAG = "DataToggleService"
         private const val STEP_MS = 700L
         private const val TIMEOUT_S = 15L
+        private const val MAX_CANDIDATES = 60
 
         private val DATA_KEYWORDS = listOf(
             "donnees mobiles", "mobile data", "donnees cellulaires",
@@ -261,10 +283,6 @@ class DataToggleService : AccessibilityService() {
 
         @Volatile
         private var instance: DataToggleService? = null
-
-        @Volatile
-        private var recording = false
-        private val recorded = mutableListOf<Step>()
 
         fun isRunning(): Boolean = instance != null
 
@@ -279,26 +297,11 @@ class DataToggleService : AccessibilityService() {
             false
         }
 
-        // --- Apprentissage, pilote depuis l'activite ---------------------
-
-        fun isRecording() = recording
-
-        /** Ouvre les parametres rapides et enregistre les appuis suivants. */
-        fun startLearning(): Boolean {
+        /** @return false si le service d'accessibilite n'est pas actif. */
+        fun capture(onDone: (List<Step>) -> Unit): Boolean {
             val service = instance ?: return false
-            recorded.clear()
-            recording = true
-            service.handler.post { service.openQuickSettings() }
+            service.captureCandidates(onDone)
             return true
-        }
-
-        /** @return les appuis captes, a valider par l'utilisateur. */
-        fun stopLearning(context: Context): List<Step> {
-            recording = false
-            val steps = recorded.toList()
-            if (steps.isNotEmpty()) Recipe.save(context, steps)
-            instance?.handler?.post { instance?.performGlobalAction(GLOBAL_ACTION_BACK) }
-            return steps
         }
 
         // --- Bascule -----------------------------------------------------

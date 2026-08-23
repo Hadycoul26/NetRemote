@@ -11,6 +11,7 @@ import android.provider.Settings
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.example.netremote.databinding.ActivityMainBinding
@@ -174,24 +175,39 @@ class MainActivity : AppCompatActivity() {
      * appareil a l'autre pour etre codes en dur.
      */
     private fun toggleLearning() {
-        if (DataToggleService.isRecording()) {
-            val steps = DataToggleService.stopLearning(this)
-            log(
-                if (steps.isEmpty()) getString(R.string.learn_none)
-                else getString(R.string.learn_saved, steps.joinToString(" → ") { it.describe() })
-            )
-            refreshUi()
-            return
-        }
-
         if (!DataToggleService.isRunning()) {
             Toast.makeText(this, R.string.learn_needs_service, Toast.LENGTH_LONG).show()
             return
         }
 
-        Toast.makeText(this, R.string.learn_instructions, Toast.LENGTH_LONG).show()
-        DataToggleService.startLearning()
-        refreshUi()
+        log(getString(R.string.learn_capturing))
+        binding.btnLearn.isEnabled = false
+
+        DataToggleService.capture { candidates ->
+            runOnUiThread {
+                binding.btnLearn.isEnabled = true
+                showCandidates(candidates)
+            }
+        }
+    }
+
+    /** L'utilisateur designe la bonne entree : l'app ne devine rien. */
+    private fun showCandidates(candidates: List<Step>) {
+        if (candidates.isEmpty()) {
+            log(getString(R.string.learn_none))
+            return
+        }
+
+        val labels = candidates.map { it.describe() }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.learn_pick)
+            .setItems(labels) { _, which ->
+                Recipe.save(this, listOf(candidates[which]))
+                log(getString(R.string.learn_saved, candidates[which].describe()))
+                refreshUi()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     // --- Role PARTAGER ---------------------------------------------------
@@ -229,9 +245,6 @@ class MainActivity : AppCompatActivity() {
             else -> "NON ACTIVÉ"
         }
 
-        binding.btnLearn.setText(
-            if (DataToggleService.isRecording()) R.string.learn_stop else R.string.learn_start
-        )
         binding.txtRecipe.text = Recipe.describe(this)
         binding.btnForgetRecipe.visibility =
             if (Recipe.exists(this)) View.VISIBLE else View.GONE

@@ -89,10 +89,12 @@ def check_references():
     ids = {v.split('/')[-1] for v in
            (el.get(android) for el in ET.parse(layout_path).iter()) if v}
 
-    for name in sorted(set(re.findall(r'R\.string\.(\w+)', code))):
+    # Le prefixe negatif exclut android.R.string.* : ce sont les ressources du
+    # framework, absentes de notre strings.xml par construction.
+    for name in sorted(set(re.findall(r'(?<!android\.)R\.string\.(\w+)', code))):
         if name not in strings:
             problems.append('R.string.%s : introuvable dans strings.xml' % name)
-    for name in sorted(set(re.findall(r'R\.drawable\.(\w+)', code))):
+    for name in sorted(set(re.findall(r'(?<!android\.)R\.drawable\.(\w+)', code))):
         if name not in drawables:
             problems.append('R.drawable.%s : introuvable' % name)
     for name in sorted(set(re.findall(r'binding\.([a-z]\w+)', code))):

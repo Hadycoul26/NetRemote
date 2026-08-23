@@ -26,11 +26,11 @@
     <string name="accessibility_hint">Sans Shizuku, la bascule passe par le service d\'accessibilité : il survit aux redémarrages, mais l\'écran du téléphone doit être allumé au moment de la commande.</string>
 
     <string name="learn_start">Apprendre la bascule</string>
-    <string name="learn_stop">Terminer l\'apprentissage</string>
     <string name="learn_forget">Oublier la séquence</string>
-    <string name="learn_instructions">Les paramètres rapides vont s\'ouvrir. Appuyez sur la tuile des données mobiles comme vous le feriez normalement, puis revenez ici et appuyez sur « Terminer l\'apprentissage ».</string>
-    <string name="learn_none">Rien n\'a été capté. Le service d\'accessibilité est-il bien actif ?</string>
-    <string name="learn_saved">Séquence apprise :\n%1$s</string>
+    <string name="learn_capturing">Ouverture des paramètres rapides…</string>
+    <string name="learn_pick">Quelle entrée bascule les données ?</string>
+    <string name="learn_none">Panneau vide. Le service d\'accessibilité est-il bien actif ?</string>
+    <string name="learn_saved">Appris : %1$s</string>
     <string name="learn_needs_service">Activez d\'abord le service d\'accessibilité.</string>
 
     <string name="shizuku_button">Autoriser Shizuku</string>
