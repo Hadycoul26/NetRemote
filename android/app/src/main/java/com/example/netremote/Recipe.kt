@@ -74,6 +74,7 @@ object Recipe {
 
     private const val FILE = "netremote_recipe"
     private const val KEY_STEPS = "steps"
+    private const val KEY_SHORTCUT = "shortcut"
     private const val TAG = "Recipe"
 
     private fun sp(context: Context) =
@@ -86,7 +87,14 @@ object Recipe {
      * bascule, donc le pas final est forcement celui qui les bascule. Ca evite
      * de demander a l'utilisateur ce que le trajet dit deja.
      */
-    fun save(context: Context, steps: List<Step>) {
+    /**
+     * @param shortcut « paquet/classe » de l'ecran ou se trouve l'interrupteur,
+     *   quand on a pu l'identifier. C'est le vrai gain de robustesse : rejouer
+     *   trois appuis dans les Reglages depend de la mise en page, de la vitesse
+     *   des transitions et de la position dans une liste ; ouvrir l'ecran
+     *   directement ne depend de rien. Le parcours reste la, en repli.
+     */
+    fun save(context: Context, steps: List<Step>, shortcut: String = "") {
         val fixed = when {
             steps.isEmpty() || steps.any { it.isToggle } -> steps
             else -> steps.dropLast(1) + steps.last().copy(role = Step.ROLE_TOGGLE)
@@ -94,7 +102,10 @@ object Recipe {
 
         val array = JSONArray()
         fixed.forEach { array.put(it.toJson()) }
-        sp(context).edit().putString(KEY_STEPS, array.toString()).apply()
+        sp(context).edit()
+            .putString(KEY_STEPS, array.toString())
+            .putString(KEY_SHORTCUT, shortcut)
+            .apply()
         Log.i(TAG, "Sequence enregistree : " + fixed.size + " pas")
     }
 
@@ -107,13 +118,21 @@ object Recipe {
         emptyList()
     }
 
-    fun clear(context: Context) = sp(context).edit().remove(KEY_STEPS).apply()
+    /** « paquet/classe » de l'ecran de l'interrupteur, vide si inconnu. */
+    fun shortcut(context: Context): String =
+        sp(context).getString(KEY_SHORTCUT, "").orEmpty()
+
+    fun clear(context: Context) =
+        sp(context).edit().remove(KEY_STEPS).remove(KEY_SHORTCUT).apply()
 
     fun exists(context: Context) = load(context).isNotEmpty()
 
     fun describe(context: Context): String {
         val steps = load(context)
         if (steps.isEmpty()) return "aucune séquence apprise"
-        return steps.mapIndexed { i, s -> "${i + 1}. ${s.describe()}" }.joinToString("\n")
+        val lines = steps.mapIndexed { i, s -> "${i + 1}. ${s.describe()}" }.toMutableList()
+        val shortcut = shortcut(context)
+        if (shortcut.isNotBlank()) lines += "raccourci : " + shortcut.substringAfterLast('.')
+        return lines.joinToString("\n")
     }
 }

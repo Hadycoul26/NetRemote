@@ -2,6 +2,7 @@ package com.example.netremote
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Path
@@ -16,8 +17,20 @@ import android.view.accessibility.AccessibilityNodeInfo
 import java.text.Normalizer
 import java.util.concurrent.Executors
 
-/** Resultat d'un rejeu, avec l'etat reellement lu sur l'interrupteur. */
-internal data class Replay(val ok: Boolean, val detail: String, val observed: Boolean?)
+/**
+ * Resultat d'un rejeu.
+ *
+ * [touched] dit si un appui a REELLEMENT ete envoye. C'est ce qui autorise ou
+ * interdit d'essayer une autre voie apres un echec : reessayer apres un appui
+ * deja parti rebasculerait l'interrupteur et annulerait le succes qu'on croyait
+ * rater.
+ */
+internal data class Replay(
+    val ok: Boolean,
+    val detail: String,
+    val observed: Boolean?,
+    val touched: Boolean = false
+)
 
 /** Un element visible a l'ecran, tel que NetRemote le voit. */
 internal data class Option(
@@ -155,7 +168,16 @@ class DataToggleService : AccessibilityService() {
     // --- Apprentissage libre ---------------------------------------------
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (!recording || guiding || event == null) return
+        if (event == null) return
+
+        // Toujours, meme hors apprentissage : c'est le seul endroit d'ou l'on
+        // apprend le nom de l'activite affichee. L'arbre d'accessibilite donne
+        // le paquet, jamais la classe — et sans la classe, pas de raccourci.
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            noteActivity(event.packageName?.toString(), event.className?.toString())
+        }
+
+        if (!recording || guiding) return
         if (event.eventType != AccessibilityEvent.TYPE_VIEW_CLICKED) return
 
         val pkg = event.packageName?.toString().orEmpty()
@@ -181,6 +203,43 @@ class DataToggleService : AccessibilityService() {
         Log.i(TAG, "Appui " + recorded.size + " enregistré : " + step.describe() + " [" + pkg + "]")
     }
 
+    /**
+     * On ne retient une activite que si elle est reellement lancable par nous.
+     *
+     * `className` d'un changement de fenetre est parfois une boite de dialogue
+     * ou une vue, pas une activite ; et une activite non exportee ferait echouer
+     * le lancement. Verifier maintenant coute une requete au PackageManager ;
+     * ne pas verifier coute un echec au moment ou l'on compte sur le raccourci.
+     */
+    private fun noteActivity(pkg: String?, cls: String?) {
+        if (pkg.isNullOrBlank() || cls.isNullOrBlank()) return
+        if (pkg == packageName || !cls.contains('.')) return
+
+        val component = ComponentName(pkg, cls)
+        val usable = try {
+            val info = packageManager.getActivityInfo(component, 0)
+            info.exported && info.isEnabled
+        } catch (e: Exception) {
+            false
+        }
+        if (usable) currentActivity = component.flattenToShortString()
+    }
+
+    /** Ouvre directement l'ecran appris. @return false si c'est refuse. */
+    private fun launchShortcut(shortcut: String): Boolean {
+        val component = ComponentName.unflattenFromString(shortcut) ?: return false
+        return try {
+            val intent = Intent()
+                .setComponent(component)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            startActivity(intent)
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "Raccourci " + shortcut + " refuse", e)
+            false
+        }
+    }
+
     // --- Apprentissage guide ---------------------------------------------
 
     /** Ouvre les parametres rapides et montre ce qui s'y trouve. */
@@ -198,11 +257,12 @@ class DataToggleService : AccessibilityService() {
     /** Sur le thread de travail : lit l'ecran, puis affiche le panneau. */
     private fun presentOptions() {
         if (!guiding) return
-        val options = snapshot()
+        val options = snapshotWhenReady()
         val index = guided.size + 1
+        val screen = "Écran lu : " + activeWindowPackage()
         val trail =
-            if (guided.isEmpty()) "Voici ce que NetRemote voit sur cet écran."
-            else "Déjà : " + guided.joinToString(" → ") { it.describe() }
+            if (guided.isEmpty()) screen
+            else screen + " — déjà : " + guided.joinToString(" → ") { it.describe() }
 
         handler.post {
             val panel = overlay ?: return@post
@@ -211,7 +271,7 @@ class DataToggleService : AccessibilityService() {
                     "Étape " + index + " — écran illisible",
                     "Aucun élément lisible ici. Ouvre l'écran voulu, puis relis.",
                     listOf(
-                        Overlay.Entry("Relire l'écran") { work.execute { presentOptions() } },
+                        Overlay.Entry("Relire l'écran") { refreshOptions() },
                         Overlay.Entry("Annuler") { cancelGuided() }
                     )
                 )
@@ -225,12 +285,21 @@ class DataToggleService : AccessibilityService() {
                     openSettingsForGuided()
                 },
                 Overlay.Entry("Relire l'écran", "si l'écran a changé depuis") {
-                    work.execute { presentOptions() }
+                    refreshOptions()
                 },
                 Overlay.Entry("Annuler", "ne rien enregistrer") { cancelGuided() }
             )
 
             panel.show("Étape " + index + " — que faut-il toucher ?", trail, entries)
+        }
+    }
+
+    /** Le panneau masque la moitie de l'ecran : on le retire avant de relire. */
+    private fun refreshOptions() {
+        work.execute {
+            handler.post { overlay?.hide() }
+            pause(HIDE_MS)
+            presentOptions()
         }
     }
 
@@ -258,7 +327,7 @@ class DataToggleService : AccessibilityService() {
                     "Ça ouvre un autre écran",
                     "NetRemote l'appuiera, puis te montrera l'écran suivant"
                 ) { navigateGuided(option) },
-                Overlay.Entry("Revenir à la liste") { work.execute { presentOptions() } }
+                Overlay.Entry("Revenir à la liste") { refreshOptions() }
             )
         )
     }
@@ -299,7 +368,7 @@ class DataToggleService : AccessibilityService() {
 
     private fun finishGuided(option: Option) {
         guided += option.toStep(Step.ROLE_TOGGLE)
-        Recipe.save(this, guided.toList())
+        Recipe.save(this, guided.toList(), currentActivity)
         guiding = false
 
         val summary = guided.mapIndexed { i, s -> (i + 1).toString() + ". " + s.describe() }
@@ -344,10 +413,14 @@ class DataToggleService : AccessibilityService() {
 
             val label = labelOf(node)
             if (label.isBlank() || label.length > 70) continue
-            if (!node.isClickable && !node.isCheckable && !hasClickableAncestor(node)) continue
 
+            // On n'exige plus que le noeud soit cliquable. Dans les Reglages,
+            // le libelle « Mobile Data » vit sur un TextView inerte : c'est la
+            // rangee qui est cliquable et l'interrupteur qui est cochable, ni
+            // l'un ni l'autre ne portant le texte. L'ancienne regle jetait donc
+            // toute la page et ne gardait que la barre de navigation.
+            if (!isOnScreen(node)) continue
             val bounds = Rect().also { node.getBoundsInScreen(it) }
-            if (bounds.width() <= 0 || bounds.height() <= 0) continue
 
             val key = normalizeText(label)
             if (out.containsKey(key)) continue
@@ -358,7 +431,7 @@ class DataToggleService : AccessibilityService() {
                 x = bounds.centerX(),
                 y = bounds.centerY(),
                 pkg = node.packageName?.toString().orEmpty(),
-                state = ToggleState.of(node)
+                state = knobState(node)
             )
             if (out.size >= MAX_OPTIONS) break
         }
@@ -366,15 +439,27 @@ class DataToggleService : AccessibilityService() {
         return out.values.toList()
     }
 
-    private fun hasClickableAncestor(node: AccessibilityNodeInfo): Boolean {
-        var parent = node.parent
-        var depth = 0
-        while (parent != null && depth < 4) {
-            if (parent.isClickable) return true
-            parent = parent.parent
-            depth++
+    /**
+     * Attend que l'ecran ait quelque chose a dire.
+     *
+     * Une transition dans les Reglages laisse un instant ou seule la barre de
+     * navigation est interrogeable. Lire a cet instant precis, c'est ne voir que
+     * « Overview, Back, Home » et croire la page vide — exactement ce qu'a
+     * montre la capture. On regarde donc jusqu'a ce qu'il y ait autre chose que
+     * SystemUI, ou jusqu'a la limite de patience.
+     */
+    private fun snapshotWhenReady(): List<Option> {
+        val deadline = System.currentTimeMillis() + CONTENT_MS
+        var best = emptyList<Option>()
+
+        while (true) {
+            val options = snapshot()
+            val real = options.count { !it.pkg.contains("systemui", ignoreCase = true) }
+            if (real >= 3) return options
+            if (options.size > best.size) best = options
+            if (System.currentTimeMillis() >= deadline) return best
+            pause(400)
         }
-        return false
     }
 
     // --- Rejeu ------------------------------------------------------------
@@ -430,6 +515,30 @@ class DataToggleService : AccessibilityService() {
     internal fun replayLearned(steps: List<Step>, target: Boolean): Replay {
         if (steps.isEmpty()) return Replay(false, "aucune séquence apprise", null)
 
+        // La voie courte : ouvrir l'ecran de l'interrupteur, sans traverser le
+        // parcours. Trois appuis dans les Reglages dependent de la mise en page,
+        // de la vitesse des transitions et de la position dans une liste ; un
+        // lancement d'activite ne depend de rien. On ne retombe sur le parcours
+        // que si l'interrupteur n'est pas au rendez-vous — jamais apres avoir
+        // deja touche quelque chose, sous peine de basculer deux fois.
+        val shortcut = Recipe.shortcut(this)
+        val knob = steps.lastOrNull { it.isToggle }
+        if (shortcut.isNotBlank() && knob != null && launchShortcut(shortcut)) {
+            pause(SCREEN_MS)
+            val direct = awaitNode(knob, LOCATE_MS)
+            if (direct != null) {
+                val outcome = applyToggle(direct, target, knob.describe()) {
+                    awaitNode(knob, RELOCATE_MS)
+                }
+                return Replay(
+                    outcome.ok,
+                    "écran ouvert directement — " + outcome.detail,
+                    outcome.observed
+                )
+            }
+            Log.i(TAG, "Raccourci ouvert mais interrupteur absent : on rejoue le parcours")
+        }
+
         if (!bringUp(steps.first().pkg)) {
             val what = if (steps.first().pkg.contains("systemui", ignoreCase = true)) {
                 "le volet des paramètres rapides ne s'est pas ouvert"
@@ -441,6 +550,7 @@ class DataToggleService : AccessibilityService() {
         pause(START_MS)
 
         val done = mutableListOf<String>()
+        var touched = false
         for ((index, step) in steps.withIndex()) {
             val position = "étape " + (index + 1) + "/" + steps.size + " (" + step.describe() + ")"
             val node = awaitNode(step, LOCATE_MS)
@@ -459,7 +569,12 @@ class DataToggleService : AccessibilityService() {
                     awaitNode(step, RELOCATE_MS)
                 }
                 closePanel()
-                return Replay(outcome.ok, before(done) + outcome.detail, outcome.observed)
+                return Replay(
+                    outcome.ok,
+                    before(done) + outcome.detail,
+                    outcome.observed,
+                    touched || outcome.touched
+                )
             }
 
             // Plus d'appui a l'aveugle sur des coordonnees memorisees : si
@@ -470,9 +585,11 @@ class DataToggleService : AccessibilityService() {
                     false,
                     position + " pas visible à l'écran (écran actif : " +
                         activeWindowPackage() + ")" + after(done),
-                    null
+                    null,
+                    touched
                 )
             }
+            touched = true
 
             done += step.describe()
             // Ouvrir un ecran de Reglages prend nettement plus qu'un appui sur
@@ -481,7 +598,7 @@ class DataToggleService : AccessibilityService() {
         }
 
         closePanel()
-        return Replay(true, "parcours rejoué : " + done.joinToString(" → "), null)
+        return Replay(true, "parcours rejoué : " + done.joinToString(" → "), null, touched)
     }
 
     /**
@@ -499,21 +616,60 @@ class DataToggleService : AccessibilityService() {
     ): Replay {
         // Certaines tuiles ne publient pas leur etat — celle de l'operateur,
         // typiquement. Le reglage systeme repond alors a leur place.
-        val before = ToggleState.of(node) ?: MobileData.isEnabled(this)
+        val before = knobState(node) ?: MobileData.isEnabled(this)
 
         if (before == target) {
             return Replay(true, what + " était déjà " + onOff(target) + " : rien touché", target)
         }
 
-        if (!tapNode(node)) return Replay(false, what + " : appui impossible", before)
+        if (!tapNode(knobTarget(node))) return Replay(false, what + " : appui impossible", before)
         pause(SETTLE_MS)
 
-        val after = ToggleState.of(relocate())
+        val after = relocate()?.let { knobState(it) }
         return when {
-            after == target -> Replay(true, what + " : passé à " + onOff(target), target)
-            after == null -> Replay(true, what + " : appui envoyé, état de l'interrupteur illisible", null)
-            else -> Replay(false, what + " : appuyé, mais resté " + onOff(after), after)
+            after == target -> Replay(true, what + " : passé à " + onOff(target), target, true)
+            after == null ->
+                Replay(true, what + " : appui envoyé, état de l'interrupteur illisible", null, true)
+            else -> Replay(false, what + " : appuyé, mais resté " + onOff(after), after, true)
         }
+    }
+
+    /**
+     * Un interrupteur, dans l'arbre, c'est trois noeuds distincts : le libelle,
+     * la rangee cliquable qui le contient, et le Switch a cote. Aucun des trois
+     * ne porte a lui seul le texte, l'etat et la zone a toucher. On les relie.
+     */
+    private fun knobState(node: AccessibilityNodeInfo): Boolean? {
+        val row = clickableRow(node)
+        return checkableIn(row, 0)?.isChecked ?: ToggleState.of(row) ?: ToggleState.of(node)
+    }
+
+    /** Le Switch si on l'a trouve — c'est sans ambiguite. Sinon la rangee. */
+    private fun knobTarget(node: AccessibilityNodeInfo): AccessibilityNodeInfo {
+        val row = clickableRow(node)
+        val switch = checkableIn(row, 0)
+        return if (switch != null && isOnScreen(switch)) switch else row
+    }
+
+    private fun clickableRow(node: AccessibilityNodeInfo): AccessibilityNodeInfo {
+        var current: AccessibilityNodeInfo? = node
+        var depth = 0
+        while (current != null && depth < 5) {
+            if (current.isClickable || current.isCheckable) return current
+            current = current.parent
+            depth++
+        }
+        return node
+    }
+
+    private fun checkableIn(node: AccessibilityNodeInfo, depth: Int): AccessibilityNodeInfo? {
+        if (depth > 4) return null
+        if (node.isCheckable) return node
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            checkableIn(child, depth + 1)?.let { return it }
+        }
+        return null
     }
 
     private fun onOff(state: Boolean) = if (state) "activé" else "coupé"
@@ -561,13 +717,37 @@ class DataToggleService : AccessibilityService() {
      */
     private fun awaitNode(step: Step, budgetMs: Long): AccessibilityNodeInfo? {
         val deadline = System.currentTimeMillis() + budgetMs
+        var scrolls = 0
+
         while (true) {
             val node = locate(step, collectNodes())
-            if (node != null && isOnScreen(node)) return node
+            when {
+                node != null && isOnScreen(node) -> return node
+
+                // Trouve mais hors champ : on demande a la liste de l'amener.
+                node != null -> {
+                    node.performAction(
+                        AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN.id
+                    )
+                    pause(500)
+                }
+
+                // Absent : un ecran de Reglages est une liste, l'element peut
+                // simplement etre plus bas. On defile avant de conclure.
+                scrolls < MAX_SCROLLS && scrollForward() -> {
+                    scrolls++
+                    pause(600)
+                }
+
+                else -> pause(300)
+            }
             if (System.currentTimeMillis() >= deadline) return null
-            pause(300)
         }
     }
+
+    private fun scrollForward(): Boolean =
+        collectNodes().firstOrNull { it.isScrollable && isOnScreen(it) }
+            ?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) == true
 
     private fun isOnScreen(node: AccessibilityNodeInfo): Boolean {
         if (!node.isVisibleToUser) return false
@@ -663,10 +843,13 @@ class DataToggleService : AccessibilityService() {
                     findByKeywords(collectNodes(), DATA_KEYWORDS)
                 }
             }
+            // Un appui a deja servi a ouvrir ce sous-panneau : le signaler,
+            // pour qu'aucune autre voie ne soit tentee par-dessus.
             return Replay(
                 false,
                 "« " + opened + " » ouvert, aucun interrupteur de données dedans. Vu : " + summary(seen),
-                null
+                null,
+                true
             )
         }
 
@@ -685,6 +868,70 @@ class DataToggleService : AccessibilityService() {
             }
         }
         return null
+    }
+
+    // --- Voie des Reglages (aucun apprentissage necessaire) ----------------
+
+    /**
+     * Ouvrir un ecran reseau des Reglages et y chercher l'interrupteur.
+     *
+     * Ces intentions sont publiques et documentees : elles ne dependent ni d'un
+     * apprentissage, ni de la disposition des tuiles, ni d'un geste systeme qui
+     * peut echouer. Et ce qu'on y trouve est un vrai Switch, qui publie son
+     * etat — contrairement a la tuile de l'operateur.
+     */
+    internal fun settingsRoute(target: Boolean): Replay {
+        val screens = listOf(
+            Settings.ACTION_NETWORK_OPERATOR_SETTINGS,
+            Settings.ACTION_DATA_ROAMING_SETTINGS,
+            Settings.ACTION_WIRELESS_SETTINGS
+        )
+
+        val tried = mutableListOf<String>()
+        for (action in screens) {
+            if (!openSettingsScreen(action)) continue
+            pause(SCREEN_MS)
+            tried += activeWindowPackage()
+
+            val node = awaitKeyword(DATA_KEYWORDS, LOCATE_MS)
+            if (node != null) {
+                return applyToggle(node, target, "Réglages : « " + labelOf(node) + " »") {
+                    findByKeywords(collectNodes(), DATA_KEYWORDS)
+                }
+            }
+        }
+
+        val where =
+            if (tried.isEmpty()) "aucun écran n'a pu être ouvert"
+            else "essayés : " + tried.distinct().joinToString(", ")
+        return Replay(false, "les Réglages n'ont montré aucun interrupteur (" + where + ")", null)
+    }
+
+    private fun openSettingsScreen(action: String): Boolean = try {
+        startActivity(
+            Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        )
+        true
+    } catch (e: Exception) {
+        Log.w(TAG, "Ecran " + action + " indisponible", e)
+        false
+    }
+
+    /** Comme awaitNode, mais sur des mots-cles : rien n'a ete appris ici. */
+    private fun awaitKeyword(keywords: List<String>, budgetMs: Long): AccessibilityNodeInfo? {
+        val deadline = System.currentTimeMillis() + budgetMs
+        var scrolls = 0
+
+        while (true) {
+            findByKeywords(collectNodes(), keywords)?.let { return it }
+            if (scrolls < MAX_SCROLLS && scrollForward()) {
+                scrolls++
+                pause(600)
+            } else {
+                pause(300)
+            }
+            if (System.currentTimeMillis() >= deadline) return null
+        }
     }
 
     // --- Outils -----------------------------------------------------------
@@ -761,6 +1008,9 @@ class DataToggleService : AccessibilityService() {
         private const val PANEL_TRIES = 3
         private const val PANEL_WAIT_MS = 1200L
         private const val PANEL_SETTLE_MS = 600L
+        private const val CONTENT_MS = 5000L
+        private const val SCREEN_MS = 1200L
+        private const val MAX_SCROLLS = 4
         private const val BETWEEN_MS = 1000L
         private const val LOCATE_MS = 6000L
         private const val RELOCATE_MS = 1500L
@@ -785,6 +1035,10 @@ class DataToggleService : AccessibilityService() {
 
         @Volatile
         private var guiding = false
+
+        /** Derniere activite affichee, « paquet/classe », vide si inconnue. */
+        @Volatile
+        private var currentActivity = ""
 
         private val recorded = mutableListOf<Step>()
 
@@ -850,11 +1104,25 @@ class DataToggleService : AccessibilityService() {
             }
 
             val learned = Recipe.load(context)
-            val replay = if (learned.isNotEmpty()) {
+            var replay = if (learned.isNotEmpty()) {
                 service.replayLearned(learned, target)
             } else {
                 service.searchByKeywords(target)
             }
+
+            // Une voie a echoue SANS rien toucher : on peut en essayer une autre
+            // sans risque. Si un appui etait deja parti, en envoyer un second
+            // rebasculerait l'interrupteur et annulerait le succes qu'on croit
+            // avoir rate — dans ce cas on s'arrete la.
+            if (!replay.ok && !replay.touched) {
+                val fallback = service.settingsRoute(target)
+                replay = if (fallback.ok || fallback.touched) {
+                    fallback
+                } else {
+                    Replay(false, replay.detail + " | Réglages : " + fallback.detail, null)
+                }
+            }
+
             if (!replay.ok) return ActionResult(false, replay.detail)
 
             // On verifie l'effet reel plutot que de croire l'appui sur parole.
