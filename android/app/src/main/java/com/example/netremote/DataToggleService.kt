@@ -668,24 +668,38 @@ class DataToggleService : AccessibilityService() {
         //
         // Verifier entre les deux interdit la double bascule : on ne tente la
         // seconde que si la premiere n'a rien change.
-        val prefereClic = knobTarget(node).isCheckable
+        // La cible est fixee UNE FOIS, et ses coordonnees avec elle.
+        //
+        // La version precedente refaisait une recherche par mots-cles entre les
+        // deux tentatives : au dixieme passage, elle a rendu un autre noeud, et
+        // le toucher est parti a (540, 1085) alors que l'interrupteur des
+        // donnees etait a (869, 825) — sur la rangee Wi-Fi. On croyait avoir
+        // essaye le vrai toucher sur l'interrupteur ; on ne l'avait jamais fait.
+        val cible = knobTarget(node)
+        val zone = Rect().also { cible.getBoundsInScreen(it) }
+        val prefereClic = cible.isCheckable
         val notes = mutableListOf<String>()
         var touched = false
 
         for (parClic in listOf(prefereClic, !prefereClic)) {
-            val cible = relocate()?.let { knobTarget(it) } ?: knobTarget(node)
             val nom = if (parClic) "ACTION_CLICK" else "toucher"
+            val fait =
+                if (parClic) clickNode(cible)
+                else zone.width() > 0 && tapAt(zone.centerX(), zone.centerY())
 
-            if (!(if (parClic) clickNode(cible) else tapCoordinates(cible))) {
+            if (!fait) {
                 notes += nom + " refusé"
                 continue
             }
             touched = true
             pause(SETTLE_MS)
 
-            val apres = relocate()?.let { knobState(it) } ?: MobileData.isEnabled(this)
+            // Le reglage systeme d'abord : il porte sur les donnees mobiles et
+            // rien d'autre. Relire un noeud retrouve par mots-cles peut renvoyer
+            // l'etat du Wi-Fi et faire passer un echec pour un succes.
+            val apres = MobileData.isEnabled(this) ?: relocate()?.let { knobState(it) }
             notes += nom + " → " + (apres?.let { onOff(it) } ?: "illisible")
-            Log.i(TAG, "  " + nom + " → " + apres)
+            Log.i(TAG, "  " + nom + " en " + zone.toShortString() + " → " + apres)
 
             if (apres == target) {
                 return Replay(true, what + " : " + notes.joinToString(", "), target, true)
