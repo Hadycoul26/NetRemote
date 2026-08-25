@@ -658,16 +658,41 @@ class DataToggleService : AccessibilityService() {
         }
 
         Log.i(TAG, "bascule « " + what + " » : lu=" + before + " voulu=" + target)
-        if (!tapNode(knobTarget(node))) return Replay(false, what + " : appui impossible", before)
-        pause(SETTLE_MS)
 
-        val after = relocate()?.let { knobState(it) }
-        return when {
-            after == target -> Replay(true, what + " : passé à " + onOff(target), target, true)
-            after == null ->
-                Replay(true, what + " : appui envoyé, état de l'interrupteur illisible", null, true)
-            else -> Replay(false, what + " : appuyé, mais resté " + onOff(after), after, true)
+        // Deux facons d'appuyer, essayees l'une apres l'autre, chacune VERIFIEE.
+        //
+        // Le banc d'essai a montre un ACTION_CLICK « accepte » sur le vrai
+        // Switch des donnees mobiles, suivi d'un etat inchange : accepte ne veut
+        // pas dire effectif. Et la version precedente s'arretait des que
+        // l'action etait acceptee, donc n'essayait jamais le vrai toucher.
+        //
+        // Verifier entre les deux interdit la double bascule : on ne tente la
+        // seconde que si la premiere n'a rien change.
+        val prefereClic = knobTarget(node).isCheckable
+        val notes = mutableListOf<String>()
+        var touched = false
+
+        for (parClic in listOf(prefereClic, !prefereClic)) {
+            val cible = relocate()?.let { knobTarget(it) } ?: knobTarget(node)
+            val nom = if (parClic) "ACTION_CLICK" else "toucher"
+
+            if (!(if (parClic) clickNode(cible) else tapCoordinates(cible))) {
+                notes += nom + " refusé"
+                continue
+            }
+            touched = true
+            pause(SETTLE_MS)
+
+            val apres = relocate()?.let { knobState(it) } ?: MobileData.isEnabled(this)
+            notes += nom + " → " + (apres?.let { onOff(it) } ?: "illisible")
+            Log.i(TAG, "  " + nom + " → " + apres)
+
+            if (apres == target) {
+                return Replay(true, what + " : " + notes.joinToString(", "), target, true)
+            }
         }
+
+        return Replay(false, what + " : " + notes.joinToString(", "), null, touched)
     }
 
     /**
@@ -847,6 +872,12 @@ class DataToggleService : AccessibilityService() {
      * si le geste a ete JOUE ou annule — la difference entre un appui qui n'a
      * rien fait et un appui qui n'a jamais eu lieu.
      */
+    private fun tapCoordinates(node: AccessibilityNodeInfo): Boolean {
+        val bounds = Rect().also { node.getBoundsInScreen(it) }
+        return bounds.width() > 0 && bounds.height() > 0 &&
+            tapAt(bounds.centerX(), bounds.centerY())
+    }
+
     private fun tapAt(x: Int, y: Int): Boolean = try {
         val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
         val gesture = GestureDescription.Builder()
@@ -1228,8 +1259,8 @@ class DataToggleService : AccessibilityService() {
         private const val CONTENT_MS = 5000L
         private const val SCREEN_MS = 1200L
         private const val MAX_SCROLLS = 4
-        private const val SAMPLES = 6
-        private const val SAMPLE_MS = 1500L
+        private const val SAMPLES = 12
+        private const val SAMPLE_MS = 2500L
         private const val TAP_MS = 90L
 
         /**

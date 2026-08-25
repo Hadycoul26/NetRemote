@@ -61,6 +61,10 @@ run_test() {
   echo "  focus pendant le test : $(focus)"
   adb logcat -d -s NetRemoteTest:V DataToggleService:V Recipe:V > "diag/log-$name.txt"
   adb exec-out screencap -p > "diag/screen-$name.png"
+  # Revenir a un ecran neutre : la boite « Internet » de SystemUI est restee
+  # ouverte jusque dans les releves de reference du passage precedent.
+  adb shell input keyevent KEYCODE_HOME
+  sleep 2
   sed 's/^[0-9-]* [0-9:.]* *[0-9]* *[0-9]* //' "diag/log-$name.txt" | grep NetRemoteTest | head -40
 }
 
