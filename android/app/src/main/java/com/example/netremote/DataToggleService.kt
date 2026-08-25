@@ -990,6 +990,7 @@ class DataToggleService : AccessibilityService() {
         }
 
         val options = snapshot()
+        if (restrictedSuspicion()) report.append(RESTRICTED).append("\n")
         report.append("écran ").append(activeWindowPackage())
             .append(" — ").append(options.size).append(" élément(s) lisible(s)")
         options.forEach {
@@ -1004,6 +1005,25 @@ class DataToggleService : AccessibilityService() {
      * C'est la seule facon de savoir si une fenetre manque parce qu'elle n'est
      * pas encore la, ou parce que nous la jetons.
      */
+    /**
+     * Le symptome d'une autorisation bloquee par Android.
+     *
+     * Depuis Android 13, une app installee hors boutique voit ses « parametres
+     * restreints » bloques. Le service d'accessibilite demarre, se declare
+     * capable de lire le contenu — et ne lit RIEN des autres applications : les
+     * fenetres sont listees, leur racine est nulle. Seul SystemUI reste
+     * lisible, parce qu'il n'est pas concerne.
+     *
+     * C'est exactement ce que montrent les releves, et ca explique un panneau
+     * d'apprentissage qui ne listerait que les boutons de navigation.
+     */
+    internal fun restrictedSuspicion(): Boolean = try {
+        val applicatives = windows.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+        applicatives.isNotEmpty() && applicatives.all { it.root == null }
+    } catch (e: Exception) {
+        false
+    }
+
     /** Ce que le systeme nous a REELLEMENT accorde, pas ce que le XML demande. */
     internal fun capabilities(): String {
         val info = serviceInfo ?: return "serviceInfo indisponible"
@@ -1211,6 +1231,17 @@ class DataToggleService : AccessibilityService() {
         private const val SAMPLES = 6
         private const val SAMPLE_MS = 1500L
         private const val TAP_MS = 90L
+
+        /**
+         * Le message a donner quand Android bloque la lecture des autres apps.
+         * Ce n'est pas un reglage de notre app : c'est une autorisation systeme
+         * qui ne s'accorde qu'a la main, une fois.
+         */
+        private const val RESTRICTED =
+            "Android bloque la lecture des autres applications " +
+                "(paramètres restreints, app installée hors boutique). " +
+                "Réglages → Applications → NetRemote → menu ⋮ → " +
+                "« Autoriser les paramètres restreints », puis réactivez le service."
         private const val BETWEEN_MS = 1000L
         private const val LOCATE_MS = 6000L
         private const val RELOCATE_MS = 1500L
@@ -1327,7 +1358,10 @@ class DataToggleService : AccessibilityService() {
                 }
             }
 
-            if (!replay.ok) return ActionResult(false, replay.detail)
+            if (!replay.ok) {
+                val hint = if (service.restrictedSuspicion()) " " + RESTRICTED else ""
+                return ActionResult(false, replay.detail + hint)
+            }
 
             // On verifie l'effet reel plutot que de croire l'appui sur parole.
             service.pause(VERIFY_MS)

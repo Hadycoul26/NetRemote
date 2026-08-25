@@ -109,6 +109,25 @@ run_test dump_here "" 40
 run_test dump_settings "" 40
 run_test dump_qs "" 40
 
+say "6b. EXPERIENCE : lever le blocage des parametres restreints"
+# Hypothese a verifier : depuis Android 13, une app installee hors boutique voit
+# ses « parametres restreints » bloques, et son service d'accessibilite ne lit
+# rien des autres applications — fenetres listees, racines nulles, seul SystemUI
+# lisible. C'est exactement le releve. Si la fenetre des Reglages devient lisible
+# apres cette autorisation, la cause est trouvee, et le correctif cote
+# utilisateur est un reglage a faire une fois, pas une version de plus.
+adb shell appops set --uid com.example.netremote ACCESS_RESTRICTED_SETTINGS allow
+adb shell appops set com.example.netremote ACCESS_RESTRICTED_SETTINGS allow
+# Reconnecter le service pour qu'il reparte avec la nouvelle autorisation.
+adb shell settings put secure enabled_accessibility_services ""
+sleep 3
+adb shell settings put secure enabled_accessibility_services "$SERVICE"
+adb shell settings put secure accessibility_enabled 1
+sleep 6
+adb shell appops get com.example.netremote ACCESS_RESTRICTED_SETTINGS | tee diag/appops.txt
+
+run_test dump_settings_apres "" 40
+
 say "6. La bascule par notre code, de bout en bout"
 adb shell settings get global mobile_data | tee diag/state-before-toggle.txt
 run_test selftest "--ez on false" 90
