@@ -81,6 +81,8 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnSelfTest.setOnClickListener { runSelfTest() }
 
+        binding.btnGuided.setOnClickListener { startGuided() }
+
         binding.btnLearn.setOnClickListener { toggleLearning() }
 
         binding.btnForgetRecipe.setOnClickListener {
@@ -208,6 +210,27 @@ class MainActivity : AppCompatActivity() {
      * demande souvent de traverser plusieurs ecrans quand la tuile des
      * parametres rapides ne repond pas.
      */
+    /**
+     * L'app montre ce qu'elle voit, l'utilisateur designe.
+     *
+     * Prefere a l'enregistrement libre : celui-ci ne capte que ce qui emet un
+     * evenement de clic, et on ne decouvre ce qu'il a rate qu'au premier echec.
+     * Ici, ce qui est affiche est exactement ce que l'app saura retrouver.
+     *
+     * Le panneau est une fenetre du service d'accessibilite, pas de l'activite :
+     * pendant l'apprentissage, l'ecran affiche les parametres rapides ou les
+     * Reglages, et une app en arriere-plan ne peut rien afficher.
+     */
+    private fun startGuided() {
+        if (!DataToggleService.isRunning()) {
+            Toast.makeText(this, R.string.learn_needs_service, Toast.LENGTH_LONG).show()
+            return
+        }
+        DataToggleService.startGuided()
+        log(getString(R.string.guided_started))
+        refreshUi()
+    }
+
     private fun toggleLearning() {
         if (DataToggleService.isRecording()) {
             val steps = DataToggleService.stopRecording(this)
@@ -279,6 +302,7 @@ class MainActivity : AppCompatActivity() {
             binding.btnLearn.setText(R.string.learn_start)
         }
 
+        binding.btnGuided.isEnabled = !DataToggleService.isGuiding()
         binding.txtRecipe.text = Recipe.describe(this)
         binding.btnForgetRecipe.visibility =
             if (Recipe.exists(this)) View.VISIBLE else View.GONE

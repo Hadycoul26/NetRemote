@@ -6,12 +6,19 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Un appui appris : ou l'utilisateur a touche, decrit de trois facons.
+ * Un pas du parcours appris : ou toucher, et QUOI y faire.
  *
- * On garde les trois parce qu'elles ne vieillissent pas pareil. L'identifiant
- * de ressource survit a un changement de langue et de position. Le libelle
- * survit a une reorganisation des tuiles. Les coordonnees ne survivent a rien,
- * mais fonctionnent quand les deux autres manquent.
+ * L'emplacement est decrit de trois facons parce qu'elles ne vieillissent pas
+ * pareil. L'identifiant de ressource survit a un changement de langue et de
+ * position. Le libelle survit a une reorganisation des tuiles. Les coordonnees
+ * ne survivent a rien, mais fonctionnent quand les deux autres manquent.
+ *
+ * Le [role] est la correction du defaut de fond des versions precedentes :
+ * elles n'enregistraient que des APPUIS. Or la derniere etape n'est pas une
+ * action, c'est un ETAT — un interrupteur. Rejouer un appui dessus le bascule,
+ * quel que soit l'etat de depart : demander « active » alors que c'est deja
+ * actif le coupait. Un pas [ROLE_TOGGLE] est lu avant d'etre touche, et n'est
+ * touche que si son etat differe de celui demande.
  */
 data class Step(
     val viewId: String,
@@ -19,7 +26,8 @@ data class Step(
     val x: Int,
     val y: Int,
     /** Application ou se trouvait l'appui : sert a s'y replacer au rejeu. */
-    val pkg: String = ""
+    val pkg: String = "",
+    val role: String = ROLE_TAP
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("viewId", viewId)
@@ -27,17 +35,30 @@ data class Step(
         .put("x", x)
         .put("y", y)
         .put("pkg", pkg)
+        .put("role", role)
 
-    fun describe(): String = when {
-        viewId.isNotBlank() -> label.ifBlank { viewId.substringAfterLast('/') }
-        label.isNotBlank() -> label
-        else -> "appui en ($x, $y)"
+    val isToggle: Boolean get() = role == ROLE_TOGGLE
+
+    fun describe(): String {
+        val what = when {
+            viewId.isNotBlank() -> label.ifBlank { viewId.substringAfterLast('/') }
+            label.isNotBlank() -> label
+            else -> "appui en ($x, $y)"
+        }
+        return if (isToggle) "$what  [interrupteur]" else what
     }
 
     companion object {
+        /** On appuie, sans se soucier de l'etat : ca ouvre un ecran. */
+        const val ROLE_TAP = "tap"
+
+        /** On lit l'etat, et on n'appuie que s'il differe de celui voulu. */
+        const val ROLE_TOGGLE = "toggle"
+
         fun fromJson(o: JSONObject) = Step(
             o.optString("viewId"), o.optString("label"),
-            o.optInt("x", -1), o.optInt("y", -1), o.optString("pkg")
+            o.optInt("x", -1), o.optInt("y", -1), o.optString("pkg"),
+            o.optString("role", ROLE_TAP)
         )
     }
 }
@@ -58,11 +79,23 @@ object Recipe {
     private fun sp(context: Context) =
         context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
+    /**
+     * Si aucun pas n'est marque comme interrupteur, c'est le dernier.
+     *
+     * Vrai par construction : le parcours s'arrete des que les donnees ont
+     * bascule, donc le pas final est forcement celui qui les bascule. Ca evite
+     * de demander a l'utilisateur ce que le trajet dit deja.
+     */
     fun save(context: Context, steps: List<Step>) {
+        val fixed = when {
+            steps.isEmpty() || steps.any { it.isToggle } -> steps
+            else -> steps.dropLast(1) + steps.last().copy(role = Step.ROLE_TOGGLE)
+        }
+
         val array = JSONArray()
-        steps.forEach { array.put(it.toJson()) }
+        fixed.forEach { array.put(it.toJson()) }
         sp(context).edit().putString(KEY_STEPS, array.toString()).apply()
-        Log.i(TAG, "Sequence enregistree : " + steps.size + " appui(s)")
+        Log.i(TAG, "Sequence enregistree : " + fixed.size + " pas")
     }
 
     fun load(context: Context): List<Step> = try {
