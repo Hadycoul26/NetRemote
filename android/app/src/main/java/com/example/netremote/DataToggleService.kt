@@ -14,6 +14,7 @@ import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import java.text.Normalizer
 import java.util.concurrent.Executors
 
@@ -504,8 +505,23 @@ class DataToggleService : AccessibilityService() {
         }
     }
 
-    private fun activeWindowPackage(): String =
-        rootInActiveWindow?.packageName?.toString().orEmpty().ifBlank { "inconnu" }
+    /**
+     * Le paquet de l'ecran, vu comme l'utilisateur le voit.
+     *
+     * `rootInActiveWindow` designe la fenetre qui a le focus : volet des
+     * notifications ouvert, c'est SystemUI, meme si l'application est dessous.
+     * On prefere donc la premiere fenetre applicative, et on ne retombe sur la
+     * fenetre active que s'il n'y en a aucune.
+     */
+    private fun activeWindowPackage(): String {
+        val app = try {
+            windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+                ?.root?.packageName?.toString()
+        } catch (e: Exception) {
+            null
+        }
+        return (app ?: rootInActiveWindow?.packageName?.toString()).orEmpty().ifBlank { "inconnu" }
+    }
 
     /**
      * Tourne sur le thread appelant (une requete HTTP), jamais sur le thread
@@ -1015,8 +1031,25 @@ class DataToggleService : AccessibilityService() {
             // Certaines surcouches refusent l'enumeration des fenetres.
         }
 
+        // Le plafond de noeuds s'applique par FENETRE, pas au total.
+        //
+        // Il etait global : une fenetre bavarde — le volet des notifications en
+        // compte des centaines — epuisait le budget avant qu'on arrive a la
+        // fenetre de l'application, qui disparaissait donc entierement. On
+        // lisait alors SystemUI en croyant lire l'ecran.
+        //
+        // Et on commence par les fenetres applicatives : c'est presque toujours
+        // la qu'est l'element cherche.
+        val ordered = roots.sortedBy { root ->
+            if (root.packageName?.toString()?.contains("systemui", ignoreCase = true) == true) 1 else 0
+        }
+
         val out = mutableListOf<AccessibilityNodeInfo>()
-        for (root in roots) walk(root, out, 0)
+        for (root in ordered) {
+            val fromWindow = mutableListOf<AccessibilityNodeInfo>()
+            walk(root, fromWindow, 0)
+            out += fromWindow
+        }
         return out
     }
 
