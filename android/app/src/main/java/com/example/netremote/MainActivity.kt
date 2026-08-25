@@ -132,6 +132,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Sans ca, un second « am start » sur une activite deja au premier plan ne
+     * declenche aucun rappel : la tache est simplement ramenee devant, et le
+     * test suivant n'est jamais execute. C'est ce qui a laisse deux essais sans
+     * la moindre trace au dernier passage.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleTestIntent(intent)
+    }
+
     override fun onResume() {
         super.onResume()
         refreshUi()

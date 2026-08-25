@@ -913,13 +913,52 @@ class DataToggleService : AccessibilityService() {
             }
         }
 
-        val options = snapshotWhenReady()
-        val head = "écran " + activeWindowPackage() + " — " + options.size + " élément(s) lisible(s)"
-        if (options.isEmpty()) return head
-
-        return head + "\n" + options.joinToString("\n") {
-            "  · " + it.label + "  [" + describeOption(it) + "]"
+        // On echantillonne dans le temps au lieu de conclure d'un coup : la
+        // capture d'ecran a montre le bon ecran affiche alors que nous n'y
+        // voyions que la barre d'etat. Savoir A QUEL MOMENT la fenetre devient
+        // lisible vaut mieux que supposer qu'elle l'est.
+        val report = StringBuilder()
+        for (sample in 1..SAMPLES) {
+            pause(SAMPLE_MS)
+            val seen = snapshot()
+            val line = "t=" + (sample * SAMPLE_MS) + "ms — " + seen.size + " élément(s)"
+            report.append(line).append("\n").append(windowReport()).append("\n")
+            Log.i(TAG, line)
         }
+
+        val options = snapshot()
+        report.append("écran ").append(activeWindowPackage())
+            .append(" — ").append(options.size).append(" élément(s) lisible(s)")
+        options.forEach {
+            report.append("\n  · ").append(it.label).append("  [").append(describeOption(it)).append("]")
+        }
+        return report.toString()
+    }
+
+    /**
+     * L'inventaire des fenetres, tel que le service les voit.
+     *
+     * C'est la seule facon de savoir si une fenetre manque parce qu'elle n'est
+     * pas encore la, ou parce que nous la jetons.
+     */
+    private fun windowReport(): String {
+        val lines = mutableListOf<String>()
+        lines += "  active : " + (rootInActiveWindow?.packageName ?: "null")
+        try {
+            val list = windows
+            lines += "  fenêtres : " + list.size
+            for (w in list) {
+                val root = w.root
+                val bounds = Rect().also { w.getBoundsInScreen(it) }
+                lines += "    type=" + w.type + " actif=" + w.isActive + " focus=" + w.isFocused +
+                    " pkg=" + (root?.packageName ?: "null") +
+                    " enfants=" + (root?.childCount ?: -1) +
+                    " zone=" + bounds.toShortString()
+            }
+        } catch (e: Exception) {
+            lines += "  fenêtres illisibles : " + e
+        }
+        return lines.joinToString("\n")
     }
 
     // --- Voie des Reglages (aucun apprentissage necessaire) ----------------
@@ -1080,6 +1119,8 @@ class DataToggleService : AccessibilityService() {
         private const val CONTENT_MS = 5000L
         private const val SCREEN_MS = 1200L
         private const val MAX_SCROLLS = 4
+        private const val SAMPLES = 6
+        private const val SAMPLE_MS = 1500L
         private const val BETWEEN_MS = 1000L
         private const val LOCATE_MS = 6000L
         private const val RELOCATE_MS = 1500L

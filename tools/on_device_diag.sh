@@ -53,7 +53,7 @@ run_test() {
   say "Test « $name »"
   collapse
   adb logcat -c
-  adb shell am start -n com.example.netremote/.MainActivity --es netremote_test "$name" $extras
+  adb shell am start --activity-single-top -n com.example.netremote/.MainActivity --es netremote_test "$name" $extras
   wait_for_log "$name =>" "$limit"
   adb logcat -d -s NetRemoteTest:I DataToggleService:* Recipe:* > "diag/log-$name.txt"
   adb exec-out screencap -p > "diag/screen-$name.png"
