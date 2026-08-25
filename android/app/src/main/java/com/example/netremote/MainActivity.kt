@@ -117,6 +117,26 @@ class MainActivity : AppCompatActivity() {
         binding.txtSelfTest.text = getString(R.string.self_test_running, what)
         worker.execute {
             val result = when (what) {
+                "serve" -> {
+                    runOnUiThread {
+                        Prefs.setServing(this, true)
+                        ServerService.start(this)
+                    }
+                    Thread.sleep(2000)
+                    "serveur " + (if (ServerService.isRunning) "actif" else "arrêté") +
+                        " sur le port " + Prefs.port(this) +
+                        (ServerService.lastError?.let { " — erreur : " + it } ?: "")
+                }
+
+                "remote" -> {
+                    val (w, h) = RemoteControl.screenSize()
+                    val jpeg = RemoteControl.screenshot(540)
+                    "service=" + RemoteControl.ready() +
+                        " capture=" + RemoteControl.canCapture() +
+                        " écran=" + w + "x" + h +
+                        " image=" + (jpeg?.size ?: -1) + " octets"
+                }
+
                 "dump_here" -> DataToggleService.diagnose("here")
                 "dump_qs" -> DataToggleService.diagnose("qs")
                 "dump_settings", "dump_settings_apres" -> DataToggleService.diagnose("settings")

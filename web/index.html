@@ -1,138 +1,244 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>NetRemote</title>
 <style>
-  :root { color-scheme: light dark; }
+  :root {
+    --fond: #0d1117;
+    --carte: #161b22;
+    --trait: #30363d;
+    --texte: #e6edf3;
+    --doux: #9198a1;
+    --vif: #58a6ff;
+    --ok: #3fb950;
+    --ko: #f85149;
+  }
   * { box-sizing: border-box; }
   body {
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    margin: 0 auto; padding: 24px; max-width: 480px; line-height: 1.5;
+    margin: 0; padding: 12px;
+    background: var(--fond); color: var(--texte);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
   }
-  h1 { font-size: 1.5rem; margin: 0 0 2px; }
-  .sub { opacity: .65; font-size: .85rem; margin: 0 0 24px; }
+  h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: .3px; }
+  #etat { font-size: 12px; color: var(--doux); text-align: center; min-height: 16px; }
+  #etat.erreur { color: var(--ko); }
 
-  .card {
-    border: 1px solid rgba(128,128,128,.35); border-radius: 16px;
-    padding: 20px; margin-bottom: 16px;
+  /* L'ecran garde ses proportions : viser juste suppose que ce qu'on voit
+     est a l'echelle de ce qu'on touche. */
+  #cadre {
+    position: relative;
+    border: 1px solid var(--trait); border-radius: 10px; overflow: hidden;
+    background: #000; line-height: 0;
+    max-width: 100%;
   }
-  .state { display: flex; align-items: center; gap: 12px; }
-  .dot { width: 14px; height: 14px; border-radius: 50%; background: #9e9e9e; flex: none; }
-  .dot.on  { background: #2e7d32; }
-  .dot.off { background: #c62828; }
-  .state-text { font-size: 1.1rem; font-weight: 600; }
-  .detail { opacity: .65; font-size: .85rem; margin-top: 6px; word-break: break-word; }
+  #ecran { display: block; width: 100%; height: auto; touch-action: none; cursor: crosshair; }
+  #vise {
+    position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px;
+    border: 2px solid var(--vif); border-radius: 50%;
+    opacity: 0; pointer-events: none; transition: opacity .35s;
+  }
+  #vise.actif { opacity: 1; transition: none; }
 
+  .rangee { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; max-width: 520px; }
   button {
-    display: block; width: 100%; padding: 16px; margin-top: 10px;
-    font-size: 1rem; font-weight: 500; border-radius: 12px;
-    border: 1px solid currentColor; background: transparent; color: inherit;
-    cursor: pointer;
+    background: var(--carte); color: var(--texte);
+    border: 1px solid var(--trait); border-radius: 8px;
+    padding: 9px 13px; font-size: 13px; cursor: pointer;
+    font-family: inherit;
   }
-  button.on  { background: #2e7d32; border-color: #2e7d32; color: #fff; }
-  button.off { background: #c62828; border-color: #c62828; color: #fff; }
-  button:disabled { opacity: .5; cursor: default; }
-
-  input {
-    width: 100%; padding: 14px; font-size: 1rem; border-radius: 12px;
-    border: 1px solid currentColor; background: transparent; color: inherit;
-  }
-  .log { font-family: ui-monospace, monospace; font-size: .8rem; opacity: .75;
-         white-space: pre-wrap; word-break: break-word; margin-top: 16px; }
-  .warn { font-size: .8rem; opacity: .7; }
+  button:hover { border-color: var(--vif); }
+  button:active { background: #21262d; }
+  button.principal { background: #1f6feb; border-color: #1f6feb; }
+  #pause.coupe { color: var(--ko); border-color: var(--ko); }
+  .indice { font-size: 11px; color: var(--doux); text-align: center; max-width: 460px; line-height: 1.5; }
 </style>
 </head>
 <body>
 
 <h1>NetRemote</h1>
-<p class="sub" id="host">Connexion au serveur…</p>
+<div id="etat">Connexion…</div>
 
-<div id="panel" hidden>
-  <div class="card">
-    <div class="state">
-      <span class="dot" id="dot"></span>
-      <span class="state-text" id="stateText">…</span>
-    </div>
-    <div class="detail" id="detail"></div>
-  </div>
-
-  <button class="on"  id="btnOn">Activer la connexion</button>
-  <button class="off" id="btnOff">Couper la connexion</button>
-
-  <p class="warn" id="warn"></p>
-  <div class="log" id="log"></div>
+<div id="cadre">
+  <img id="ecran" alt="écran du téléphone">
+  <div id="vise"></div>
 </div>
+
+<div class="rangee">
+  <button data-touche="back">◁ Retour</button>
+  <button data-touche="home">◯ Accueil</button>
+  <button data-touche="recents">▢ Récents</button>
+</div>
+
+<div class="rangee">
+  <button data-touche="quicksettings" class="principal">Réglages rapides</button>
+  <button data-touche="notifications">Notifications</button>
+  <button id="reveil">Réveiller l'écran</button>
+  <button id="pause">Pause</button>
+</div>
+
+<p class="indice">
+  Clique sur l'écran pour appuyer au même endroit. Glisse pour faire défiler.
+  Pour couper les données : <b>Réglages rapides</b>, puis la tuile de ton opérateur.
+</p>
 
 <script>
 (function () {
-  var $ = function (id) { return document.getElementById(id); };
+  var ecran = document.getElementById('ecran');
+  var cadre = document.getElementById('cadre');
+  var vise  = document.getElementById('vise');
+  var etat  = document.getElementById('etat');
+  var pause = document.getElementById('pause');
 
-  var busy = false;
+  var largeur = 0, hauteur = 0;   // pixels reels du telephone
+  var enPause = false;
+  var occupe = false;
+  var attente = 700;
 
-  function log(message) {
-    $('log').textContent = new Date().toLocaleTimeString() + '  ' + message;
+  function dire(texte, erreur) {
+    etat.textContent = texte;
+    etat.className = erreur ? 'erreur' : '';
   }
 
-  function api(path, params) {
-    var query = new URLSearchParams(params || {});
-    return fetch(path + '?' + query.toString(), { cache: 'no-store' })
-      .then(function (response) { return response.json(); });
+  function appeler(chemin) {
+    return fetch(chemin, { cache: 'no-store' }).then(function (r) { return r.json(); });
   }
 
-  function render(state) {
-    $('panel').hidden = false;
+  // --- Image ---------------------------------------------------------------
 
-    $('host').textContent = state.platform === 'android'
-      ? 'Serveur Android — ' + (state.device || '')
-      : 'Serveur PC — ' + (state.device || '');
-
-    var on = !!state.connected;
-    $('dot').className = 'dot ' + (on ? 'on' : 'off');
-    $('stateText').textContent = on ? 'Connexion active' : 'Connexion coupée';
-    $('detail').textContent = state.detail || '';
-
-    $('btnOn').disabled = busy || on;
-    $('btnOff').disabled = busy || !on;
-
-    $('warn').textContent = state.warning || '';
-  }
-
-  function refresh() {
-    return api('/api/state')
-      .then(render)
-      .catch(function (error) {
-        $('host').textContent = 'Serveur injoignable';
+  function rafraichir() {
+    if (enPause || occupe) return;
+    occupe = true;
+    var url = '/api/screen?w=540&t=' + Date.now();
+    var img = new Image();
+    img.onload = function () {
+      ecran.src = img.src;
+      occupe = false;
+    };
+    img.onerror = function () {
+      occupe = false;
+      appeler('/api/info').then(function (info) {
+        dire(info.problem || 'capture indisponible', true);
+      }).catch(function () {
+        dire('téléphone injoignable', true);
       });
+    };
+    img.src = url;
   }
 
-  function setConnection(on) {
-    busy = true;
-    $('btnOn').disabled = true;
-    $('btnOff').disabled = true;
-    log(on ? 'Activation…' : 'Coupure…');
+  // --- Viser ---------------------------------------------------------------
 
-    api('/api/set', { on: on ? '1' : '0' })
-      .then(function (result) {
-        log((result.ok ? 'OK — ' : 'ÉCHEC — ') + (result.detail || ''));
-      })
-      .catch(function (error) {
-        log('Serveur injoignable');
-      })
-      .then(function () {
-        busy = false;
-        // Le basculement d'une interface reseau n'est pas instantane.
-        setTimeout(refresh, 1200);
-      });
+  // La position est convertie en pixels REELS du telephone : l'image est
+  // reduite pour le reseau, et affichee a une taille encore differente par le
+  // navigateur. Passer par des fractions evite d'avoir a connaitre l'une ou
+  // l'autre.
+  function versTelephone(evenement) {
+    var boite = ecran.getBoundingClientRect();
+    var fx = (evenement.clientX - boite.left) / boite.width;
+    var fy = (evenement.clientY - boite.top) / boite.height;
+    return {
+      x: Math.round(Math.min(Math.max(fx, 0), 1) * largeur),
+      y: Math.round(Math.min(Math.max(fy, 0), 1) * hauteur),
+      ecranX: evenement.clientX - boite.left,
+      ecranY: evenement.clientY - boite.top
+    };
   }
 
-  $('btnOn').onclick = function () { setConnection(true); };
-  $('btnOff').onclick = function () { setConnection(false); };
+  function marquer(point) {
+    vise.style.left = point.ecranX + 'px';
+    vise.style.top = point.ecranY + 'px';
+    vise.classList.add('actif');
+    setTimeout(function () { vise.classList.remove('actif'); }, 60);
+  }
 
-  refresh();
-  setInterval(function () { if (!busy && !$('panel').hidden) { refresh(); } }, 5000);
+  var depart = null;
+
+  ecran.addEventListener('pointerdown', function (e) {
+    e.preventDefault();
+    depart = versTelephone(e);
+    depart.temps = Date.now();
+    marquer(depart);
+  });
+
+  ecran.addEventListener('pointerup', function (e) {
+    if (!depart) return;
+    var fin = versTelephone(e);
+    var dx = fin.x - depart.x, dy = fin.y - depart.y;
+    var distance = Math.sqrt(dx * dx + dy * dy);
+    var duree = Date.now() - depart.temps;
+    var d = depart;
+    depart = null;
+
+    // Un doigt ne tient jamais parfaitement immobile : en dessous de ce seuil,
+    // c'est un appui, pas un glissement.
+    if (distance < 18) {
+      envoyer(duree > 550
+        ? '/api/press?x=' + d.x + '&y=' + d.y
+        : '/api/tap?x=' + d.x + '&y=' + d.y);
+    } else {
+      envoyer('/api/swipe?x1=' + d.x + '&y1=' + d.y +
+              '&x2=' + fin.x + '&y2=' + fin.y +
+              '&ms=' + Math.min(Math.max(duree, 120), 1200));
+    }
+  });
+
+  ecran.addEventListener('pointercancel', function () { depart = null; });
+  ecran.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  function envoyer(chemin) {
+    appeler(chemin).then(function (r) {
+      dire(r.ok ? '' : r.detail, !r.ok);
+      // Laisser l'ecran reagir avant de le relire.
+      setTimeout(rafraichir, 350);
+      setTimeout(rafraichir, 900);
+    }).catch(function () {
+      dire('téléphone injoignable', true);
+    });
+  }
+
+  // --- Boutons -------------------------------------------------------------
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-touche]'), function (b) {
+    b.addEventListener('click', function () {
+      envoyer('/api/key?name=' + b.getAttribute('data-touche'));
+    });
+  });
+
+  document.getElementById('reveil').addEventListener('click', function () {
+    dire('réveil…');
+    appeler('/api/wake').then(function (r) {
+      dire(r.detail);
+      setTimeout(rafraichir, 600);
+    });
+  });
+
+  pause.addEventListener('click', function () {
+    enPause = !enPause;
+    pause.textContent = enPause ? 'Reprendre' : 'Pause';
+    pause.className = enPause ? 'coupe' : '';
+    if (!enPause) rafraichir();
+  });
+
+  // --- Demarrage -----------------------------------------------------------
+
+  appeler('/api/info').then(function (info) {
+    largeur = info.width;
+    hauteur = info.height;
+    if (largeur && hauteur) {
+      cadre.style.width = 'min(100%, 380px)';
+      cadre.style.aspectRatio = largeur + ' / ' + hauteur;
+    }
+    dire(info.problem || (info.device + ' — Android ' + info.android + ' — ' + info.data),
+         !!info.problem);
+    rafraichir();
+    setInterval(rafraichir, attente);
+  }).catch(function () {
+    dire('téléphone injoignable — NetRemote est-il lancé avec « Partager » ?', true);
+  });
 })();
 </script>
+
 </body>
 </html>

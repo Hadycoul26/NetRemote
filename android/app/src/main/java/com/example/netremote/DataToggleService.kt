@@ -1320,6 +1320,9 @@ class DataToggleService : AccessibilityService() {
 
         fun isRunning(): Boolean = instance != null
 
+        /** Le service pour [RemoteControl] : lui seul peut capturer et gesticuler. */
+        internal fun current(): DataToggleService? = instance
+
         /** @param where « qs » ou « settings ». Bloquant : hors thread principal. */
         fun diagnose(where: String): String =
             instance?.diagnoseScreen(where) ?: "service d'accessibilité non actif"
