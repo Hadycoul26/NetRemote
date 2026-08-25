@@ -158,6 +158,13 @@
             android:text="@string/learn_start" />
 
         <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/learn_hint"
+            android:textAppearance="?attr/textAppearanceBodySmall" />
+
+        <TextView
             android:id="@+id/txtRecipe"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

@@ -189,8 +189,8 @@ class DataToggleService : AccessibilityService() {
         guiding = true
         guided.clear()
         work.execute {
-            handler.post { openQuickSettings() }
-            pause(START_MS)
+            ensureQuickSettings()
+            pause(PANEL_SETTLE_MS)
             presentOptions()
         }
     }
@@ -221,6 +221,9 @@ class DataToggleService : AccessibilityService() {
             val entries = options.map { option ->
                 Overlay.Entry(option.label, describeOption(option)) { askRole(option) }
             } + listOf(
+                Overlay.Entry("Ouvrir les Réglages", "pour désigner l'interrupteur là-bas") {
+                    openSettingsForGuided()
+                },
                 Overlay.Entry("Relire l'écran", "si l'écran a changé depuis") {
                     work.execute { presentOptions() }
                 },
@@ -258,6 +261,28 @@ class DataToggleService : AccessibilityService() {
                 Overlay.Entry("Revenir à la liste") { work.execute { presentOptions() } }
             )
         )
+    }
+
+    /**
+     * Le volet des parametres rapides n'est pas la seule voie, et c'est la
+     * moins solide : ses tuiles publient rarement leur etat. L'ecran des
+     * Reglages porte un vrai interrupteur — lisible, et rejouable par un simple
+     * lancement d'activite.
+     */
+    private fun openSettingsForGuided() {
+        work.execute {
+            handler.post { overlay?.hide() }
+            pause(HIDE_MS)
+            try {
+                val intent = Intent(Settings.ACTION_SETTINGS)
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                startActivity(intent)
+            } catch (e: Exception) {
+                Log.w(TAG, "Reglages inaccessibles", e)
+            }
+            pause(NAVIGATE_MS)
+            presentOptions()
+        }
     }
 
     private fun navigateGuided(option: Option) {
@@ -354,10 +379,48 @@ class DataToggleService : AccessibilityService() {
 
     // --- Rejeu ------------------------------------------------------------
 
-    internal fun openQuickSettings() {
-        performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS)
-        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS) }, STEP_MS)
+    /**
+     * Ouvre le volet des parametres rapides ET verifie qu'il est ouvert.
+     *
+     * L'ancienne version envoyait l'action deux fois de suite, en pariant que
+     * la premiere ouvrait le volet des notifications et la seconde le depliait.
+     * Sur Android 15 la premiere ouvre deja les parametres rapides : la seconde
+     * les refermait. Le rejeu appuyait alors sur un ecran qui n'etait plus la.
+     *
+     * On agit donc sur constat, pas sur pari : on demande, on regarde, on
+     * redemande si besoin.
+     */
+    internal fun ensureQuickSettings(): Boolean {
+        repeat(PANEL_TRIES) {
+            if (quickSettingsOpen()) return true
+            handler.post { performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS) }
+            pause(PANEL_WAIT_MS)
+        }
+        return quickSettingsOpen()
     }
+
+    /**
+     * Volet ouvert = SystemUI occupe une grande part de l'ecran. Replie, il ne
+     * garde que la barre d'etat et la barre de navigation.
+     */
+    private fun quickSettingsOpen(): Boolean {
+        val metrics = resources.displayMetrics
+        val screen = metrics.widthPixels.toLong() * metrics.heightPixels.toLong()
+        if (screen <= 0L) return false
+
+        return collectNodes().any { node ->
+            val pkg = node.packageName?.toString().orEmpty()
+            if (!pkg.contains("systemui", ignoreCase = true) || !node.isVisibleToUser) {
+                false
+            } else {
+                val bounds = Rect().also { node.getBoundsInScreen(it) }
+                bounds.width().toLong() * bounds.height().toLong() > screen / 4
+            }
+        }
+    }
+
+    private fun activeWindowPackage(): String =
+        rootInActiveWindow?.packageName?.toString().orEmpty().ifBlank { "inconnu" }
 
     /**
      * Tourne sur le thread appelant (une requete HTTP), jamais sur le thread
@@ -368,7 +431,12 @@ class DataToggleService : AccessibilityService() {
         if (steps.isEmpty()) return Replay(false, "aucune séquence apprise", null)
 
         if (!bringUp(steps.first().pkg)) {
-            return Replay(false, "impossible d'ouvrir « " + steps.first().pkg + " »", null)
+            val what = if (steps.first().pkg.contains("systemui", ignoreCase = true)) {
+                "le volet des paramètres rapides ne s'est pas ouvert"
+            } else {
+                "impossible d'ouvrir « " + steps.first().pkg + " »"
+            }
+            return Replay(false, what + " (écran actif : " + activeWindowPackage() + ")", null)
         }
         pause(START_MS)
 
@@ -380,7 +448,12 @@ class DataToggleService : AccessibilityService() {
             if (step.isToggle) {
                 if (node == null) {
                     closePanel()
-                    return Replay(false, position + " introuvable" + after(done), null)
+                    return Replay(
+                        false,
+                        position + " pas visible à l'écran (écran actif : " +
+                            activeWindowPackage() + ")" + after(done),
+                        null
+                    )
                 }
                 val outcome = applyToggle(node, target, step.describe()) {
                     awaitNode(step, RELOCATE_MS)
@@ -389,14 +462,16 @@ class DataToggleService : AccessibilityService() {
                 return Replay(outcome.ok, before(done) + outcome.detail, outcome.observed)
             }
 
-            val tapped = when {
-                node != null -> tapNode(node)
-                step.x > 0 && step.y > 0 -> tapAt(step.x, step.y)
-                else -> false
-            }
-            if (!tapped) {
+            // Plus d'appui a l'aveugle sur des coordonnees memorisees : si
+            // l'element n'est pas la, le toucher ne peut rien atteindre.
+            if (node == null || !tapNode(node)) {
                 closePanel()
-                return Replay(false, position + " introuvable" + after(done), null)
+                return Replay(
+                    false,
+                    position + " pas visible à l'écran (écran actif : " +
+                        activeWindowPackage() + ")" + after(done),
+                    null
+                )
             }
 
             done += step.describe()
@@ -422,7 +497,9 @@ class DataToggleService : AccessibilityService() {
         what: String,
         relocate: () -> AccessibilityNodeInfo?
     ): Replay {
-        val before = ToggleState.of(node)
+        // Certaines tuiles ne publient pas leur etat — celle de l'operateur,
+        // typiquement. Le reglage systeme repond alors a leur place.
+        val before = ToggleState.of(node) ?: MobileData.isEnabled(this)
 
         if (before == target) {
             return Replay(true, what + " était déjà " + onOff(target) + " : rien touché", target)
@@ -457,8 +534,7 @@ class DataToggleService : AccessibilityService() {
         if (pkg.isBlank()) return true
 
         if (pkg.contains("systemui", ignoreCase = true)) {
-            handler.post { openQuickSettings() }
-            return true
+            return ensureQuickSettings()
         }
 
         return try {
@@ -474,14 +550,32 @@ class DataToggleService : AccessibilityService() {
         }
     }
 
-    /** On reessaie : l'ecran precedent peut encore etre en train de ceder la place. */
+    /**
+     * On reessaie tant que le noeud n'est pas REELLEMENT a l'ecran.
+     *
+     * L'arbre d'accessibilite contient les fenetres repliees : la tuile des
+     * parametres rapides s'y trouve meme volet ferme. La retrouver ne prouve
+     * donc rien, et lui envoyer un geste revient a toucher un endroit ou elle
+     * n'est pas. C'est ce qui produisait « appui envoyé » suivi de « l'état n'a
+     * pas changé » : les deux etaient vrais, et l'appui tombait dans le vide.
+     */
     private fun awaitNode(step: Step, budgetMs: Long): AccessibilityNodeInfo? {
         val deadline = System.currentTimeMillis() + budgetMs
         while (true) {
-            locate(step, collectNodes())?.let { return it }
+            val node = locate(step, collectNodes())
+            if (node != null && isOnScreen(node)) return node
             if (System.currentTimeMillis() >= deadline) return null
             pause(300)
         }
+    }
+
+    private fun isOnScreen(node: AccessibilityNodeInfo): Boolean {
+        if (!node.isVisibleToUser) return false
+        val metrics = resources.displayMetrics
+        val bounds = Rect().also { node.getBoundsInScreen(it) }
+        return bounds.width() > 0 && bounds.height() > 0 &&
+            bounds.left >= 0 && bounds.top >= 0 &&
+            bounds.right <= metrics.widthPixels && bounds.bottom <= metrics.heightPixels
     }
 
     private fun locate(step: Step, nodes: List<AccessibilityNodeInfo>): AccessibilityNodeInfo? {
@@ -526,8 +620,15 @@ class DataToggleService : AccessibilityService() {
     // --- Rejeu par mots-cles (quand rien n'a ete appris) -------------------
 
     internal fun searchByKeywords(target: Boolean): Replay {
-        handler.post { openQuickSettings() }
-        pause(START_MS)
+        if (!ensureQuickSettings()) {
+            return Replay(
+                false,
+                "le volet des paramètres rapides ne s'est pas ouvert (écran actif : " +
+                    activeWindowPackage() + ")",
+                null
+            )
+        }
+        pause(PANEL_SETTLE_MS)
 
         val outcome = keywordToggle(target)
         closePanel()
@@ -578,6 +679,7 @@ class DataToggleService : AccessibilityService() {
     ): AccessibilityNodeInfo? {
         for (keyword in keywords) {
             for (node in nodes) {
+                if (!isOnScreen(node)) continue
                 val label = normalizeText(labelOf(node))
                 if (label.isNotEmpty() && label.contains(keyword)) return node
             }
@@ -595,8 +697,14 @@ class DataToggleService : AccessibilityService() {
         }
     }
 
+    /**
+     * Ne referme que si le volet est ouvert : un RETOUR envoye a l'aveugle
+     * quitte l'application au premier plan — c'est ce qui renvoyait le
+     * telephone a l'accueil au milieu d'un test.
+     */
     private fun closePanel() {
-        handler.postDelayed({ performGlobalAction(GLOBAL_ACTION_BACK) }, 400L)
+        if (!quickSettingsOpen()) return
+        handler.post { performGlobalAction(GLOBAL_ACTION_BACK) }
     }
 
     /** Le libelle porte souvent sur un enfant non cliquable : on remonte. */
@@ -649,8 +757,10 @@ class DataToggleService : AccessibilityService() {
     companion object {
 
         private const val TAG = "DataToggleService"
-        private const val STEP_MS = 700L
         private const val START_MS = 1800L
+        private const val PANEL_TRIES = 3
+        private const val PANEL_WAIT_MS = 1200L
+        private const val PANEL_SETTLE_MS = 600L
         private const val BETWEEN_MS = 1000L
         private const val LOCATE_MS = 6000L
         private const val RELOCATE_MS = 1500L

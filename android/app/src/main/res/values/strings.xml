@@ -34,6 +34,7 @@
     <string name="guided_hint">NetRemote ouvre les paramètres rapides, affiche ce qu\'il y voit, et tu désignes l\'interrupteur des données. Il lira son état avant d\'y toucher : « activer » ne veut pas dire « appuyer ».</string>
     <string name="guided_started">Panneau ouvert en bas de l\'écran : choisis l\'élément dans la liste.</string>
 
+    <string name="learn_hint">Repli : l\'enregistrement libre ne capte que les appuis que l\'écran signale, et les tuiles des paramètres rapides n\'en signalent souvent aucun.</string>
     <string name="learn_start">Enregistrer le parcours</string>
     <string name="learn_stop">Arrêter l\'enregistrement (%1$d appui(s))</string>
     <string name="learn_forget">Oublier le parcours</string>
