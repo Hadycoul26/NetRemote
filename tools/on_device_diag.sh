@@ -55,7 +55,7 @@ run_test() {
   adb logcat -c
   adb shell am start --activity-single-top -n com.example.netremote/.MainActivity --es netremote_test "$name" $extras
   wait_for_log "$name =>" "$limit"
-  adb logcat -d -s NetRemoteTest:I DataToggleService:I DataToggleService:W Recipe:I > "diag/log-$name.txt"
+  adb logcat -d -s NetRemoteTest:V DataToggleService:V Recipe:V > "diag/log-$name.txt"
   adb exec-out screencap -p > "diag/screen-$name.png"
   sed 's/^[0-9-]* [0-9:.]* *[0-9]* *[0-9]* //' "diag/log-$name.txt" | grep NetRemoteTest | head -40
 }
@@ -89,7 +89,17 @@ adb shell svc data enable
 sleep 4
 adb shell settings get global mobile_data | tee diag/state-after-svc-enable.txt
 
-say "5. Arbre de reference : le volet des parametres rapides"
+# --- Nos tests d'abord, avant toute connexion d'uiautomator ---
+run_test dump_here "" 40
+run_test dump_settings "" 40
+run_test dump_qs "" 40
+
+say "5. La bascule par notre code, de bout en bout"
+adb shell settings get global mobile_data | tee diag/state-before-toggle.txt
+run_test selftest "--ez on false" 90
+adb shell settings get global mobile_data | tee diag/state-after-toggle.txt
+
+say "6. Arbre de reference : le volet des parametres rapides"
 adb shell cmd statusbar expand-settings
 sleep 3
 echo "focus : $(focus)" | tee diag/focus-quicksettings.txt
@@ -98,7 +108,7 @@ adb pull /sdcard/qs.xml diag/tree-quicksettings.xml
 adb exec-out screencap -p > diag/screen-quicksettings.png
 collapse
 
-say "6. Arbre de reference : l'ecran reseau des Reglages"
+say "7. Arbre de reference : l'ecran reseau des Reglages"
 # C'est LE releve qui manquait : la structure exacte de la rangee « Mobile
 # data » — quelles classes, qui est cliquable, qui est cochable.
 adb shell am start -a android.settings.NETWORK_OPERATOR_SETTINGS
@@ -108,25 +118,16 @@ adb shell uiautomator dump /sdcard/net.xml >/dev/null 2>&1
 adb pull /sdcard/net.xml diag/tree-network-settings.xml
 adb exec-out screencap -p > diag/screen-network-settings.png
 
-say "7. Arbre de reference : les Reglages, ecran d'accueil"
+say "8. Arbre de reference : les Reglages, ecran d'accueil"
 adb shell am start -a android.settings.SETTINGS
 sleep 5
 echo "focus : $(focus)" | tee diag/focus-settings.txt
 adb shell uiautomator dump /sdcard/home.xml >/dev/null 2>&1
 adb pull /sdcard/home.xml diag/tree-settings-home.xml
 
-# Ce que NOTRE code voit, la ou uiautomator voit tout. Si uiautomator liste
-# l'interrupteur et que nous ne le listons pas, le defaut est dans notre lecture.
-# Notre propre fenetre d'abord : si elle est illisible, le defaut est chez
-# nous et pas dans les Reglages.
-run_test dump_here "" 40
-run_test dump_settings "" 40
-run_test dump_qs "" 40
-
-say "8. La bascule par notre code, de bout en bout"
-adb shell settings get global mobile_data | tee diag/state-before-toggle.txt
-run_test selftest "--ez on false" 90
-adb shell settings get global mobile_data | tee diag/state-after-toggle.txt
+# Meme releve, mais APRES les dumps uiautomator : la comparaison des deux
+# repond a elle seule a la question de l'interference.
+run_test dump_settings_apres "" 40
 
 say "9. Verdict"
 echo -n "mobile_data avant : "; cat diag/state-before-toggle.txt

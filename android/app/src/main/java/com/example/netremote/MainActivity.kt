@@ -119,7 +119,7 @@ class MainActivity : AppCompatActivity() {
             val result = when (what) {
                 "dump_here" -> DataToggleService.diagnose("here")
                 "dump_qs" -> DataToggleService.diagnose("qs")
-                "dump_settings" -> DataToggleService.diagnose("settings")
+                "dump_settings", "dump_settings_apres" -> DataToggleService.diagnose("settings")
                 "selftest" -> MobileData.set(this, on).let {
                     (if (it.ok) "OK — " else "ÉCHEC — ") + it.detail
                 }

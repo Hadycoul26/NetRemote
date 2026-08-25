@@ -1025,7 +1025,15 @@ class DataToggleService : AccessibilityService() {
             val list = windows
             lines += "  fenêtres : " + list.size
             for (w in list) {
-                val root = w.root
+                // Une seconde tentative distingue « pas encore prete » de
+                // « inaccessible » ; les capacites du moment disent si notre
+                // configuration a ete revoquee entre-temps.
+                var root = w.root
+                if (root == null) {
+                    pause(250)
+                    root = w.root
+                    if (root == null) lines += "    [racine nulle] " + capabilities()
+                }
                 val bounds = Rect().also { w.getBoundsInScreen(it) }
                 lines += "    type=" + w.type + " actif=" + w.isActive + " focus=" + w.isFocused +
                     " titre=" + (w.title ?: "?") +
