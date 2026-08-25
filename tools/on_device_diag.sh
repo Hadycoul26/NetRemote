@@ -50,7 +50,7 @@ run_test() {
 # Prend une capture par l'API et rapporte sa taille : zero octet = echec.
 capture() {
   local nom="$1"
-  curl -s -o "diag/$nom.jpg" -w "  $nom : %{http_code}, %{size_download} octets" \n    "$BASE/api/screen?w=540&t=$(date +%s%N)"
+  curl -s "$BASE/api/screen?w=540&t=$(date +%s%N)" -o "diag/$nom.jpg" -w "  $nom : %{http_code}, %{size_download} octets"
   # Une reponse d'erreur est un fichier elle aussi : sans ce controle, quatre
   # messages JSON identiques passaient pour quatre captures identiques, et le
   # banc annoncait « aucun changement » la ou il n'y avait aucune image.
