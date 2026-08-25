@@ -107,8 +107,12 @@ class WebServer(
     private fun captureProblem(): String = when {
         !RemoteControl.ready() ->
             "Service d'accessibilité inactif : Réglages → Accessibilité → NetRemote."
-        !RemoteControl.canCapture() ->
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.R ->
             "La capture d'écran par accessibilité demande Android 11 ou plus récent."
+        !RemoteControl.canCapture() ->
+            "Le service n'a pas la capacité de capture. Désactivez puis réactivez " +
+                "NetRemote dans Réglages → Accessibilité : la capacité est lue au " +
+                "moment où le service est activé."
         else ->
             "Le système a refusé la capture. L'écran est-il allumé ?"
     }

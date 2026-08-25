@@ -1,6 +1,7 @@
 package com.example.netremote
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
 import android.graphics.Bitmap
 import android.graphics.Path
@@ -48,7 +49,18 @@ object RemoteControl {
     /** Le service d'accessibilite porte tout : sans lui, rien n'est possible. */
     fun ready(): Boolean = DataToggleService.current() != null
 
-    fun canCapture(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+    /**
+     * La version d'Android ne suffit pas : la capture demande une capacite
+     * declaree, `canTakeScreenshot`, distincte de la lecture de contenu et des
+     * gestes. Sans elle, le systeme repond par une SecurityException plutot que
+     * par un echec ordinaire — on demande donc au systeme, pas au calendrier.
+     */
+    fun canCapture(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
+        val info = DataToggleService.current()?.serviceInfo ?: return false
+        return info.capabilities and
+            AccessibilityServiceInfo.CAPABILITY_CAN_TAKE_SCREENSHOT != 0
+    }
 
     fun screenSize(): Pair<Int, Int> {
         val service = DataToggleService.current() ?: return 0 to 0
