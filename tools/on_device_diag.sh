@@ -113,6 +113,9 @@ adb pull /sdcard/home.xml diag/tree-settings-home.xml
 
 # Ce que NOTRE code voit, la ou uiautomator voit tout. Si uiautomator liste
 # l'interrupteur et que nous ne le listons pas, le defaut est dans notre lecture.
+# Notre propre fenetre d'abord : si elle est illisible, le defaut est chez
+# nous et pas dans les Reglages.
+run_test dump_here "" 40
 run_test dump_settings "" 40
 run_test dump_qs "" 40
 

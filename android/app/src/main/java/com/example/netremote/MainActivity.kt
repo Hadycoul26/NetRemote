@@ -117,6 +117,7 @@ class MainActivity : AppCompatActivity() {
         binding.txtSelfTest.text = getString(R.string.self_test_running, what)
         worker.execute {
             val result = when (what) {
+                "dump_here" -> DataToggleService.diagnose("here")
                 "dump_qs" -> DataToggleService.diagnose("qs")
                 "dump_settings" -> DataToggleService.diagnose("settings")
                 "selftest" -> MobileData.set(this, on).let {

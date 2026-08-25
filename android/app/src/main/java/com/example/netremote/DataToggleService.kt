@@ -1,6 +1,7 @@
 package com.example.netremote
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
 import android.content.ComponentName
 import android.content.Context
@@ -153,7 +154,24 @@ class DataToggleService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         overlay = Overlay(this)
-        Log.i(TAG, "Service d'accessibilité connecté")
+
+        // Reappliquer la configuration a chaud.
+        //
+        // Elle est declaree dans le XML, mais ce n'est pas toujours celle que
+        // le service recoit : sans flagRetrieveInteractiveWindows effectif,
+        // getWindows() liste bien les fenetres et leur racine reste nulle —
+        // exactement le symptome releve sur l'emulateur.
+        serviceInfo = serviceInfo?.apply {
+            eventTypes = AccessibilityEvent.TYPES_ALL_MASK
+            feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+            flags = flags or
+                AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
+                AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
+                AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
+            notificationTimeout = 100
+        }
+
+        Log.i(TAG, "Service connecté — " + capabilities())
     }
 
     override fun onDestroy() {
@@ -897,7 +915,12 @@ class DataToggleService : AccessibilityService() {
      * comparaison, on ne peut que deviner — et on a devine dix fois.
      */
     internal fun diagnoseScreen(where: String): String {
+        Log.i(TAG, "diagnostic « " + where + " » — " + capabilities())
         when (where) {
+            // Aucune navigation : on lit l'ecran tel qu'il est. Si notre propre
+            // fenetre est illisible, le defaut n'est pas dans les Reglages.
+            "here" -> pause(SAMPLE_MS)
+
             "qs" -> {
                 if (!ensureQuickSettings()) {
                     return "le volet ne s'est pas ouvert (écran actif : " + activeWindowPackage() + ")"
@@ -941,6 +964,20 @@ class DataToggleService : AccessibilityService() {
      * C'est la seule facon de savoir si une fenetre manque parce qu'elle n'est
      * pas encore la, ou parce que nous la jetons.
      */
+    /** Ce que le systeme nous a REELLEMENT accorde, pas ce que le XML demande. */
+    internal fun capabilities(): String {
+        val info = serviceInfo ?: return "serviceInfo indisponible"
+        val contenu = info.capabilities and
+            AccessibilityServiceInfo.CAPABILITY_CAN_RETRIEVE_WINDOW_CONTENT != 0
+        val gestes = info.capabilities and
+            AccessibilityServiceInfo.CAPABILITY_CAN_PERFORM_GESTURES != 0
+        val fenetres = info.flags and
+            AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS != 0
+        return "contenu=" + contenu + " gestes=" + gestes + " fenêtresInteractives=" + fenetres +
+            " capacités=0x" + Integer.toHexString(info.capabilities) +
+            " flags=0x" + Integer.toHexString(info.flags)
+    }
+
     private fun windowReport(): String {
         val lines = mutableListOf<String>()
         lines += "  active : " + (rootInActiveWindow?.packageName ?: "null")
@@ -951,7 +988,8 @@ class DataToggleService : AccessibilityService() {
                 val root = w.root
                 val bounds = Rect().also { w.getBoundsInScreen(it) }
                 lines += "    type=" + w.type + " actif=" + w.isActive + " focus=" + w.isFocused +
-                    " pkg=" + (root?.packageName ?: "null") +
+                    " titre=" + (w.title ?: "?") +
+                    " pkg=" + (root?.packageName ?: "RACINE NULLE") +
                     " enfants=" + (root?.childCount ?: -1) +
                     " zone=" + bounds.toShortString()
             }
