@@ -55,6 +55,7 @@ run_test() {
   adb logcat -c
   adb shell am start --activity-single-top -n com.example.netremote/.MainActivity --es netremote_test "$name" $extras
   wait_for_log "$name =>" "$limit"
+  echo "  focus pendant le test : $(focus)"
   adb logcat -d -s NetRemoteTest:V DataToggleService:V Recipe:V > "diag/log-$name.txt"
   adb exec-out screencap -p > "diag/screen-$name.png"
   sed 's/^[0-9-]* [0-9:.]* *[0-9]* *[0-9]* //' "diag/log-$name.txt" | grep NetRemoteTest | head -40
@@ -68,18 +69,32 @@ say "1. Appareil"
 adb shell getprop ro.build.version.release | tee diag/android-version.txt
 adb shell getprop ro.product.model
 
-say "2. Installation"
+say "2. Assainir l'emulateur"
+# « Pixel Launcher isn't responding » a squatte le premier plan sur trois
+# passages : la boite de dialogue devient la fenetre au focus, la fenetre des
+# Reglages disparait de la liste, et tout ce qu'on mesure ensuite est fausse.
+# On supprime les boites d'erreur, on chasse celles deja affichees.
+adb shell settings put global hide_error_dialogs 1
+adb shell am force-stop com.google.android.apps.nexuslauncher
+sleep 3
+adb shell input keyevent KEYCODE_BACK
+adb shell settings put global window_animation_scale 0
+adb shell settings put global transition_animation_scale 0
+adb shell settings put global animator_duration_scale 0
+collapse
+
+say "3. Installation"
 adb install -r -g "$APK"
 adb shell wm dismiss-keyguard
 collapse
 
-say "3. Activation du service d'accessibilite"
+say "4. Activation du service d'accessibilite"
 adb shell settings put secure enabled_accessibility_services "$SERVICE"
 adb shell settings put secure accessibility_enabled 1
 sleep 5
 adb shell settings get secure enabled_accessibility_services | tee diag/accessibility.txt
 
-say "4. La bascule marche-t-elle par la voie systeme ?"
+say "5. La bascule marche-t-elle par la voie systeme ?"
 # Si meme svc data echoue, le probleme n'est pas dans notre interface.
 adb shell settings get global mobile_data | tee diag/state-before.txt
 adb shell svc data disable
@@ -94,12 +109,12 @@ run_test dump_here "" 40
 run_test dump_settings "" 40
 run_test dump_qs "" 40
 
-say "5. La bascule par notre code, de bout en bout"
+say "6. La bascule par notre code, de bout en bout"
 adb shell settings get global mobile_data | tee diag/state-before-toggle.txt
 run_test selftest "--ez on false" 90
 adb shell settings get global mobile_data | tee diag/state-after-toggle.txt
 
-say "6. Arbre de reference : le volet des parametres rapides"
+say "7. Arbre de reference : le volet des parametres rapides"
 adb shell cmd statusbar expand-settings
 sleep 3
 echo "focus : $(focus)" | tee diag/focus-quicksettings.txt
@@ -108,7 +123,7 @@ adb pull /sdcard/qs.xml diag/tree-quicksettings.xml
 adb exec-out screencap -p > diag/screen-quicksettings.png
 collapse
 
-say "7. Arbre de reference : l'ecran reseau des Reglages"
+say "8. Arbre de reference : l'ecran reseau des Reglages"
 # C'est LE releve qui manquait : la structure exacte de la rangee « Mobile
 # data » — quelles classes, qui est cliquable, qui est cochable.
 adb shell am start -a android.settings.NETWORK_OPERATOR_SETTINGS
@@ -118,7 +133,7 @@ adb shell uiautomator dump /sdcard/net.xml >/dev/null 2>&1
 adb pull /sdcard/net.xml diag/tree-network-settings.xml
 adb exec-out screencap -p > diag/screen-network-settings.png
 
-say "8. Arbre de reference : les Reglages, ecran d'accueil"
+say "9. Arbre de reference : les Reglages, ecran d'accueil"
 adb shell am start -a android.settings.SETTINGS
 sleep 5
 echo "focus : $(focus)" | tee diag/focus-settings.txt
@@ -129,7 +144,7 @@ adb pull /sdcard/home.xml diag/tree-settings-home.xml
 # repond a elle seule a la question de l'interference.
 run_test dump_settings_apres "" 40
 
-say "9. Verdict"
+say "10. Verdict"
 echo -n "mobile_data avant : "; cat diag/state-before-toggle.txt
 echo -n "mobile_data apres : "; cat diag/state-after-toggle.txt
 

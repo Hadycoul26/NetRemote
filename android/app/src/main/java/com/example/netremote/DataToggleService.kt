@@ -1183,7 +1183,10 @@ class DataToggleService : AccessibilityService() {
         into: MutableList<AccessibilityNodeInfo>,
         depth: Int
     ) {
-        if (node == null || depth > 25 || into.size > 800) return
+        // Chaque enfant est un appel entre processus : 800 noeuds par fenetre,
+        // plusieurs fois par seconde, suffisent a faire tomber une application
+        // lente en « ne repond pas ». Un budget plus sobre suffit largement.
+        if (node == null || depth > 20 || into.size > 300) return
         into += node
         for (i in 0 until node.childCount) walk(node.getChild(i), into, depth + 1)
     }
