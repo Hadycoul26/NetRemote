@@ -55,10 +55,14 @@ run_test() {
   adb logcat -c
   adb shell am start --activity-single-top -n com.example.netremote/.MainActivity --es netremote_test "$name" $extras
   wait_for_log "$name =>" "$limit"
-  adb logcat -d -s NetRemoteTest:I DataToggleService:* Recipe:* > "diag/log-$name.txt"
+  adb logcat -d -s NetRemoteTest:I DataToggleService:I DataToggleService:W Recipe:I > "diag/log-$name.txt"
   adb exec-out screencap -p > "diag/screen-$name.png"
   sed 's/^[0-9-]* [0-9:.]* *[0-9]* *[0-9]* //' "diag/log-$name.txt" | grep NetRemoteTest | head -40
 }
+
+# L'emulateur de la CI est lent : le lanceur a deja plante pendant un passage.
+# On lui laisse le temps de se poser avant de le solliciter.
+sleep 15
 
 say "1. Appareil"
 adb shell getprop ro.build.version.release | tee diag/android-version.txt

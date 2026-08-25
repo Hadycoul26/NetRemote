@@ -2,6 +2,7 @@ package com.example.netremote
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.accessibilityservice.AccessibilityService.GestureResultCallback
 import android.accessibilityservice.GestureDescription
 import android.content.ComponentName
 import android.content.Context
@@ -656,6 +657,7 @@ class DataToggleService : AccessibilityService() {
             return Replay(true, what + " était déjà " + onOff(target) + " : rien touché", target)
         }
 
+        Log.i(TAG, "bascule « " + what + " » : lu=" + before + " voulu=" + target)
         if (!tapNode(knobTarget(node))) return Replay(false, what + " : appui impossible", before)
         pause(SETTLE_MS)
 
@@ -812,6 +814,26 @@ class DataToggleService : AccessibilityService() {
      */
     private fun tapNode(node: AccessibilityNodeInfo): Boolean {
         val bounds = Rect().also { node.getBoundsInScreen(it) }
+        Log.i(
+            TAG,
+            "cible : " + node.className + " « " + labelOf(node) + " »" +
+                " cliquable=" + node.isClickable + " cochable=" + node.isCheckable +
+                " actif=" + node.isEnabled + " zone=" + bounds.toShortString()
+        )
+
+        // Un interrupteur reel repond a ACTION_CLICK : c'est l'action que la
+        // vue expose, sans dependre de coordonnees. Une tuile de parametres
+        // rapides, elle, cable ACTION_CLICK sur « ouvrir les reglages » — il
+        // lui faut un vrai toucher. On choisit donc selon ce qu'est la cible,
+        // au lieu d'appliquer la meme recette aux deux.
+        if (node.isCheckable) {
+            if (clickNode(node)) {
+                Log.i(TAG, "  ACTION_CLICK accepte")
+                return true
+            }
+            Log.i(TAG, "  ACTION_CLICK refuse, on tente le toucher")
+        }
+
         if (bounds.width() > 0 && bounds.height() > 0 &&
             tapAt(bounds.centerX(), bounds.centerY())
         ) {
@@ -820,12 +842,30 @@ class DataToggleService : AccessibilityService() {
         return clickNode(node)
     }
 
+    /**
+     * dispatchGesture ne renvoie que « la demande est partie ». Le rappel dit
+     * si le geste a ete JOUE ou annule — la difference entre un appui qui n'a
+     * rien fait et un appui qui n'a jamais eu lieu.
+     */
     private fun tapAt(x: Int, y: Int): Boolean = try {
         val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, 60))
+            .addStroke(GestureDescription.StrokeDescription(path, 0, TAP_MS))
             .build()
-        dispatchGesture(gesture, null, null)
+
+        val callback = object : GestureResultCallback() {
+            override fun onCompleted(description: GestureDescription?) {
+                Log.i(TAG, "  geste joué en (" + x + ", " + y + ")")
+            }
+
+            override fun onCancelled(description: GestureDescription?) {
+                Log.w(TAG, "  geste ANNULÉ en (" + x + ", " + y + ")")
+            }
+        }
+
+        val sent = dispatchGesture(gesture, callback, handler)
+        if (!sent) Log.w(TAG, "  geste refusé par le système en (" + x + ", " + y + ")")
+        sent
     } catch (e: Exception) {
         Log.w(TAG, "Geste impossible", e)
         false
@@ -1159,6 +1199,7 @@ class DataToggleService : AccessibilityService() {
         private const val MAX_SCROLLS = 4
         private const val SAMPLES = 6
         private const val SAMPLE_MS = 1500L
+        private const val TAP_MS = 90L
         private const val BETWEEN_MS = 1000L
         private const val LOCATE_MS = 6000L
         private const val RELOCATE_MS = 1500L
