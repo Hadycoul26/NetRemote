@@ -88,6 +88,10 @@ class WebServer(
      * ne doivent pas se confondre, sinon on croit l'ecran fige.
      */
     private fun serveScreen(maxWidth: Int): Response {
+        // Trace d'entree : le passage precedent n'a rien laisse dans le journal
+        // alors que la reponse etait bien la notre. Sans preuve que le
+        // gestionnaire s'execute, on ne peut pas savoir ou ca casse.
+        Log.i(TAG, "/api/screen demandé, largeur " + maxWidth)
         val jpeg = RemoteControl.screenshot(maxWidth)
             ?: return json(
                 JSONObject()
@@ -96,6 +100,7 @@ class WebServer(
                 Response.Status.SERVICE_UNAVAILABLE
             )
 
+        Log.i(TAG, "/api/screen : " + jpeg.size + " octets servis")
         val response = newFixedLengthResponse(
             Response.Status.OK, "image/jpeg",
             ByteArrayInputStream(jpeg), jpeg.size.toLong()

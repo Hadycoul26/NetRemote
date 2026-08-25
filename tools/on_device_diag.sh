@@ -152,7 +152,12 @@ sleep 2
 adb shell dumpsys power 2>/dev/null | grep -m1 -i "mWakefulness=" | tr -d '\r' | tee diag/wakefulness.txt
 
 say "11. Journal des appels HTTP"
-adb logcat -d -s RemoteControl:V WebServer:V Wake:V ServerService:V   > diag/log-http.txt
+# SANS filtre de tag : le passage precedent a rendu un journal vide alors que
+# chaque echec de capture est cense s'y inscrire. Un filtre qui ne trouve rien
+# et un code qui ne s'execute pas donnent le meme fichier vide — on enleve donc
+# le filtre plutot que de continuer a deviner lequel des deux c'est.
+adb logcat -d > diag/log-complet.txt
+grep -a -iE "netremote|RemoteControl|WebServer|Screenshot|accessibility" diag/log-complet.txt   | tail -60 > diag/log-http.txt
 sed 's/^[0-9-]* [0-9:.]* *[0-9]* *[0-9]* //' diag/log-http.txt | head -40
 
 say "12. Verdict"
