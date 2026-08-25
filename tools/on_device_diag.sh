@@ -51,6 +51,9 @@ wait_for_log() {
 run_test() {
   local name="$1" extras="$2" limit="$3"
   say "Test « $name »"
+  adb shell input keyevent KEYCODE_WAKEUP
+  adb shell wm dismiss-keyguard
+  sleep 1
   collapse
   adb logcat -c
   adb shell am start --activity-single-top -n com.example.netremote/.MainActivity --es netremote_test "$name" $extras
@@ -116,6 +119,7 @@ say "6b. EXPERIENCE : lever le blocage des parametres restreints"
 # lisible. C'est exactement le releve. Si la fenetre des Reglages devient lisible
 # apres cette autorisation, la cause est trouvee, et le correctif cote
 # utilisateur est un reglage a faire une fois, pas une version de plus.
+echo -n "avant : "; adb shell appops get com.example.netremote ACCESS_RESTRICTED_SETTINGS | tee diag/appops-avant.txt
 adb shell appops set --uid com.example.netremote ACCESS_RESTRICTED_SETTINGS allow
 adb shell appops set com.example.netremote ACCESS_RESTRICTED_SETTINGS allow
 # Reconnecter le service pour qu'il reparte avec la nouvelle autorisation.
