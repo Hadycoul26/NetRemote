@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -92,6 +93,42 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnBattery.setOnClickListener {
             openSettings(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        }
+
+        handleTestIntent(intent)
+    }
+
+    /**
+     * Point d'entree de diagnostic, pilotable par adb :
+     *
+     *   am start -n com.example.netremote/.MainActivity --es netremote_test dump_settings
+     *
+     * Il n'ouvre aucune porte nouvelle : MainActivity est deja l'activite de
+     * lancement, et ces commandes ne font que ce que les boutons font deja. En
+     * echange, un emulateur peut les enchainer sans personne devant l'ecran —
+     * et c'est la seule facon d'arreter de livrer une version pour savoir si
+     * la precedente marchait.
+     */
+    private fun handleTestIntent(intent: Intent) {
+        val what = intent.getStringExtra(EXTRA_TEST) ?: return
+        intent.removeExtra(EXTRA_TEST)
+        val on = intent.getBooleanExtra("on", true)
+
+        binding.txtSelfTest.text = getString(R.string.self_test_running, what)
+        worker.execute {
+            val result = when (what) {
+                "dump_qs" -> DataToggleService.diagnose("qs")
+                "dump_settings" -> DataToggleService.diagnose("settings")
+                "selftest" -> MobileData.set(this, on).let {
+                    (if (it.ok) "OK — " else "ÉCHEC — ") + it.detail
+                }
+                else -> "test inconnu : " + what
+            }
+            Log.i(TEST_TAG, what + " =>" + TEST_NL + result)
+            runOnUiThread {
+                binding.txtSelfTest.text = result
+                refreshUi()
+            }
         }
     }
 
@@ -335,5 +372,8 @@ class MainActivity : AppCompatActivity() {
 
     private companion object {
         const val SHIZUKU_REQUEST = 42
+        const val EXTRA_TEST = "netremote_test"
+        const val TEST_TAG = "NetRemoteTest"
+        const val TEST_NL = "\n"
     }
 }

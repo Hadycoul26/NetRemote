@@ -870,6 +870,42 @@ class DataToggleService : AccessibilityService() {
         return null
     }
 
+    // --- Diagnostic --------------------------------------------------------
+
+    /**
+     * Ce que l'app voit, en toutes lettres.
+     *
+     * Compare au dump d'uiautomator pris au meme instant, ce texte dit ou est
+     * le defaut : si uiautomator liste l'interrupteur et que nous ne le listons
+     * pas, c'est notre lecture qui est fautive, pas l'appareil. Sans cette
+     * comparaison, on ne peut que deviner — et on a devine dix fois.
+     */
+    internal fun diagnoseScreen(where: String): String {
+        when (where) {
+            "qs" -> {
+                if (!ensureQuickSettings()) {
+                    return "le volet ne s'est pas ouvert (écran actif : " + activeWindowPackage() + ")"
+                }
+                pause(PANEL_SETTLE_MS)
+            }
+
+            "settings" -> {
+                if (!openSettingsScreen(Settings.ACTION_NETWORK_OPERATOR_SETTINGS)) {
+                    return "écran réseau indisponible sur cet appareil"
+                }
+                pause(SCREEN_MS)
+            }
+        }
+
+        val options = snapshotWhenReady()
+        val head = "écran " + activeWindowPackage() + " — " + options.size + " élément(s) lisible(s)"
+        if (options.isEmpty()) return head
+
+        return head + "\n" + options.joinToString("\n") {
+            "  · " + it.label + "  [" + describeOption(it) + "]"
+        }
+    }
+
     // --- Voie des Reglages (aucun apprentissage necessaire) ----------------
 
     /**
@@ -1043,6 +1079,10 @@ class DataToggleService : AccessibilityService() {
         private val recorded = mutableListOf<Step>()
 
         fun isRunning(): Boolean = instance != null
+
+        /** @param where « qs » ou « settings ». Bloquant : hors thread principal. */
+        fun diagnose(where: String): String =
+            instance?.diagnoseScreen(where) ?: "service d'accessibilité non actif"
 
         fun isRecording(): Boolean = recording
 

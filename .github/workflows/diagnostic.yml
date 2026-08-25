@@ -1,0 +1,89 @@
+name: Diagnostic sur emulateur
+
+# Un banc d'essai qui ne coute rien a personne.
+#
+# Jusqu'ici, savoir si une correction marchait demandait de construire un APK,
+# de l'envoyer, de l'installer et de le tester a la main : une heure, pour une
+# reponse a une seule question. Un emulateur dans la CI repond a toutes les
+# questions a chaque commit, et publie les arbres d'ecran, les captures et les
+# journaux en piece jointe.
+#
+# Ce que ca ne remplace pas : l'emulateur est un Android de reference, pas la
+# surcouche du telephone. Il attrape les defauts de notre code — lecture d'ecran
+# vide, mauvais noeud, appui hors champ — pas les particularites d'un
+# constructeur.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build de l'APK
+        working-directory: android
+        run: gradle assembleDebug --no-daemon
+
+      # Sans acces a /dev/kvm, l'emulateur demarre en emulation logicielle et
+      # depasse largement le temps imparti.
+      - name: Acces KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Emulateur et diagnostic
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: bash tools/on_device_diag.sh
+
+      - name: Publier le diagnostic (artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic
+          path: diag/
+          if-no-files-found: warn
+          retention-days: 14
+
+      # Un artifact ne se telecharge qu'authentifie ; une release, non. C'est la
+      # seule facon pour moi de relire ces fichiers sans jeton GitHub.
+      - name: Publier le diagnostic (release)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: diag-${{ github.run_number }}
+        run: |
+          zip -r diagnostic.zip diag || true
+          gh release create "$TAG" diagnostic.zip             --title "Diagnostic $TAG"             --notes "Arbres d'ecran, captures et journaux releves sur l'emulateur."
