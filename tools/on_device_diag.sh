@@ -107,6 +107,11 @@ run_test remote "" 30
 run_test serve "" 40
 
 say "5. Le serveur repond-il ?"
+# Vider le journal ICI : tout ce qui suit est le fait des appels HTTP, et c'est
+# la seule fenetre ou l'on peut voir pourquoi une capture echoue cote serveur.
+# Le passage precedent capturait le journal avant les appels, donc ne montrait
+# rien de leurs erreurs.
+adb logcat -c
 adb forward tcp:8080 tcp:8080
 curl -s -o diag/info.json -w "  /api/info : %{http_code}\n" "$BASE/api/info"
 cat diag/info.json; echo
@@ -146,7 +151,11 @@ curl -s "$BASE/api/wake"; echo
 sleep 2
 adb shell dumpsys power 2>/dev/null | grep -m1 -i "mWakefulness=" | tr -d '\r' | tee diag/wakefulness.txt
 
-say "11. Verdict"
+say "11. Journal des appels HTTP"
+adb logcat -d -s RemoteControl:V WebServer:V Wake:V ServerService:V   > diag/log-http.txt
+sed 's/^[0-9-]* [0-9:.]* *[0-9]* *[0-9]* //' diag/log-http.txt | head -40
+
+say "12. Verdict"
 echo "Les trois lignes qui comptent :"
 grep -h "l'ecran a CHANGE\|AUCUN CHANGEMENT\|INDECIDABLE" diag/*.txt 2>/dev/null || true
 ls -l diag/*.jpg 2>/dev/null

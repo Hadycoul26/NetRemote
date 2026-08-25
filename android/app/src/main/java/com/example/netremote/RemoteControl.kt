@@ -34,8 +34,12 @@ object RemoteControl {
 
     private const val TAG = "RemoteControl"
 
-    /** Le systeme refuse les captures trop rapprochees : on sert la derniere. */
-    private const val MIN_INTERVAL_MS = 400L
+    /**
+     * Le systeme refuse une capture demandee moins d'une seconde apres la
+     * precedente, et repond par une erreur, pas par une attente. On sert donc
+     * la derniere image en dessous de cet intervalle plutot que de la reclamer.
+     */
+    private const val MIN_INTERVAL_MS = 1100L
     private const val SHOT_TIMEOUT_MS = 5000L
 
     private val shotExecutor = Executors.newSingleThreadExecutor()
@@ -136,8 +140,15 @@ object RemoteControl {
      * @return JPEG, ou null si la capture a echoue.
      */
     fun screenshot(maxWidth: Int): ByteArray? {
-        val service = DataToggleService.current() ?: return null
-        if (!canCapture()) return null
+        val service = DataToggleService.current()
+        if (service == null) {
+            Log.w(TAG, "Capture : service d'accessibilité absent")
+            return null
+        }
+        if (!canCapture()) {
+            Log.w(TAG, "Capture : capacité canTakeScreenshot absente")
+            return null
+        }
 
         val now = System.currentTimeMillis()
         val cached = lastShot
@@ -176,9 +187,14 @@ object RemoteControl {
             return cached
         }
 
-        latch.await(SHOT_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        if (!latch.await(SHOT_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+            Log.w(TAG, "Capture : aucune réponse après " + SHOT_TIMEOUT_MS + " ms")
+        }
 
         val fresh = encoded
+        if (fresh == null && cached == null) {
+            Log.w(TAG, "Capture : échec, et aucune image précédente à servir")
+        }
         if (fresh != null) {
             lastShot = fresh
             lastShotAt = System.currentTimeMillis()
